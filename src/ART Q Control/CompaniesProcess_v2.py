@@ -41,8 +41,9 @@ error_logger = None
 
 # Import PyQt5 for dialog
 from PyQt5.QtWidgets import (
-    QApplication, QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
-    QPushButton, QComboBox, QScrollArea, QWidget, QFrame, QGridLayout
+    QApplication, QDialog, QVBoxLayout, QHBoxLayout, QLabel,
+    QPushButton, QComboBox, QScrollArea, QWidget, QFrame, QGridLayout,
+    QProgressBar
 )
 from PyQt5.QtCore import Qt
 from ui.settings_aware_dialog import SettingsAwareMixin

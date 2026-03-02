@@ -1638,37 +1638,6 @@ def show_companies_email_confirmation(email, cases_info, email_body, cases_left=
             layout.setContentsMargins(24, 20, 24, 20)
             layout.setSpacing(12)
 
-            # ── COUNTER CARD: cases left + groups left ───────────────────────
-            counter_frame = QFrame()
-            counter_frame.setStyleSheet(
-                f"QFrame {{ background: {_c['layer_01']};"
-                f" border-left: 4px solid {_c['teal']};"
-                f" border-top: 1px solid {_c['border_subtle']};"
-                f" border-right: 1px solid {_c['border_subtle']};"
-                f" border-bottom: 1px solid {_c['border_subtle']}; }}"
-            )
-            counter_lyt = QHBoxLayout(counter_frame)
-            counter_lyt.setContentsMargins(14, 10, 14, 10)
-            counter_lyt.setSpacing(24)
-
-            def _kv(label, val, color):
-                col = QVBoxLayout()
-                col.setSpacing(1)
-                l = QLabel(label.upper())
-                l.setFont(QFont('IBM Plex Sans', _fs - 4, QFont.Bold))
-                l.setStyleSheet(f"color: {_c['text_secondary']}; letter-spacing: 1px; background: transparent; border: none;")
-                v = QLabel(str(val))
-                v.setFont(QFont('IBM Plex Sans', _fs + 4, QFont.Bold))
-                v.setStyleSheet(f"color: {color}; font-weight: 800; background: transparent; border: none;")
-                col.addWidget(l)
-                col.addWidget(v)
-                return col
-
-            counter_lyt.addLayout(_kv("Cases Left",  cases_left,       _c['interactive']))
-            counter_lyt.addLayout(_kv("Email Groups Left", email_groups_left, _c['teal']))
-            counter_lyt.addLayout(_kv("This Batch",  len(cases_info),  _c['text_secondary']))
-            counter_lyt.addStretch()
-            layout.addWidget(counter_frame)
 
             # ── EMAIL HEADER ─────────────────────────────────────────────────
             hdr = QLabel(f"Sending to:  {email}")
