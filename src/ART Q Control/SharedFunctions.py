@@ -38,7 +38,6 @@ import sys
 from config_loader import init_config
 from pathlib import Path
 
-
 # ============================================================================
 # CONFIGURATION INITIALIZATION
 # ============================================================================
@@ -167,7 +166,6 @@ LOCATORS = {
     )
 }
 
-
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
@@ -177,7 +175,6 @@ def _ensure_dir(path):
         os.makedirs(path, exist_ok=True)
     except Exception:
         pass
-
 
 def update_excel_sheet_safely(excel_path, dataframe, sheet_name):
     """
@@ -201,7 +198,6 @@ def update_excel_sheet_safely(excel_path, dataframe, sheet_name):
         print(f"[ERROR] Failed to update Excel sheet: {e}")
         dataframe.to_excel(excel_path, sheet_name=sheet_name, index=False)
 
-
 def update_cache_file(cache_path, dataframe, sheet_name):
     """
     Fast update to cache file (much smaller, no other sheets to preserve)
@@ -210,7 +206,6 @@ def update_cache_file(cache_path, dataframe, sheet_name):
         dataframe.to_excel(cache_path, sheet_name=sheet_name, index=False)
     except Exception as e:
         print(f"[ERROR] Failed to update cache file: {e}")
-
 
 def safe_find(driver, by, locator, timeout=20, clickable=False, retries=3, poll=0.5):
     """Find element with retries. Silent retries, clean error output."""
@@ -240,7 +235,6 @@ def safe_find(driver, by, locator, timeout=20, clickable=False, retries=3, poll=
     
     return None
 
-
 def click_safe(driver, by, locator, timeout=20, retries=3, poll=0.5):
     el = safe_find(driver, by, locator, timeout=timeout, clickable=True, retries=retries, poll=poll)
     if not el:
@@ -251,7 +245,6 @@ def click_safe(driver, by, locator, timeout=20, retries=3, poll=0.5):
     except Exception as e:
         print(f"[ERROR] click_safe failed on {locator}: ")
         return False
-
 
 def send_keys_safe(driver, by, locator, value, timeout=20, retries=3, poll=0.5, enter=False):
     el = safe_find(driver, by, locator, timeout=timeout, clickable=True, retries=retries, poll=poll)
@@ -270,7 +263,6 @@ def send_keys_safe(driver, by, locator, value, timeout=20, retries=3, poll=0.5, 
         print(f"[ERROR] send_keys_safe failed on {locator}: ")
         return False
 
-
 def enable_windows_inhibit():
     global _inhibit_active
     try:
@@ -281,7 +273,6 @@ def enable_windows_inhibit():
     except Exception as e:
         print(f"[WARN] Failed to enable Windows inhibit: ")
 
-
 def disable_windows_inhibit():
     global _inhibit_active
     try:
@@ -291,7 +282,6 @@ def disable_windows_inhibit():
             print("[INFO] Windows sleep/display inhibit disabled")
     except Exception as e:
         print(f"[WARN] Failed to disable Windows inhibit: ")
-
 
 def Chrome_ART_Profile():
     chrome_options = Options()
@@ -314,7 +304,6 @@ def Chrome_ART_Profile():
             print(f"[WARN] Failed to create Chrome profile: ")
     return chrome_options
 
-
 def todays_excel_path():
     now = datetime.now()
     dd = now.strftime('%d')
@@ -323,13 +312,11 @@ def todays_excel_path():
     path = os.path.join(EXCEL_BASE_PATH, file_name)
     return path
 
-
 def find_column_case_insensitive(df, name):
     for c in df.columns:
         if c.lower() == name.lower():
             return c
     return None
-
 
 def keep_driver_alive(driver, check_interval=60):
     """
@@ -345,12 +332,11 @@ def keep_driver_alive(driver, check_interval=60):
     """
     try:
         driver.refresh()
-        print(f"[DEBUG] Driver refreshed to keep alive")
+
         return True
     except Exception as e:
-        print(f"[DEBUG] Could not refresh driver (may not be at valid URL yet): {e}")
-        return False
 
+        return False
 
 def wait_for_excel_file(path, check_interval=900        
 ):
@@ -362,7 +348,6 @@ def wait_for_excel_file(path, check_interval=900
         time.sleep(check_interval)
     print(f"[INFO] Excel file found: {path}")
     return True
-
 
 def get_todays_cache_path(agent_name, mode="autosender"):
     """
@@ -381,7 +366,6 @@ def get_todays_cache_path(agent_name, mode="autosender"):
     agent_clean = agent_name.split()[0].replace(' ', '_')
     filename = f"working_cases_{agent_clean}_{mode}_{date_str}.xlsx"
     return os.path.join(CACHE_DIRECTORY, filename)
-
 
 def check_existing_cache_and_ask(cache_path, mode_name="Auto Sender"):
     """
@@ -466,7 +450,6 @@ def check_existing_cache_and_ask(cache_path, mode_name="Auto Sender"):
     dialog.exec_()
     return dialog.result
 
-
 # ============================================================================
 # CRM / DYNAMICS FUNCTIONS
 # ============================================================================
@@ -543,7 +526,6 @@ def case_search_and_open(driver, case_number):
         retries=3,
     )
 
-
 def solution_provided_check_and_skip(driver, case_number, df, excel_path):
     """Check if case has 'Solution Provided' status - skip if not"""
     solutionProv_case = True
@@ -553,7 +535,6 @@ def solution_provided_check_and_skip(driver, case_number, df, excel_path):
     if not case_status.lower() == "solution provided":
         solutionProv_case = False
     return solutionProv_case
-
 
 def eticket_check_and_skip(driver, case_number, df, excel_path):
     """
@@ -664,7 +645,6 @@ def eticket_check_and_skip(driver, case_number, df, excel_path):
         eticket_case = False
     return eticket_case
 
-
 def solution_provided_check_and_skip_companies(driver, case_number, df, excel_path):
     """
     Check if case has 'Solution Provided' OR 'Closed' status - for Companies Process.
@@ -688,7 +668,6 @@ def solution_provided_check_and_skip_companies(driver, case_number, df, excel_pa
         solution_or_closed_case = False
     
     return solution_or_closed_case
-
 
 def serial_extraction(driver, case_number, df):
     """Extract serial number from case"""
@@ -714,7 +693,6 @@ def serial_extraction(driver, case_number, df):
 
     return serial_val
 
-
 def customer_name_extraction(driver, case_number):
     """Extract customer name from case"""
     CX_Name = ''
@@ -737,7 +715,6 @@ def customer_name_extraction(driver, case_number):
 
     return CX_Name
 
-
 def formatting_texts_sms(CX_Name, serial_val, case_number, df):
     """Format SMS text for the case"""
     try:
@@ -745,7 +722,6 @@ def formatting_texts_sms(CX_Name, serial_val, case_number, df):
     except Exception:
         sms_text = SMSText.format(CX_Name='Our Valued Customer', case_number=case_number)
     return sms_text
-
 
 def formatting_texts_email(CX_Name, serial_val, case_number, df):
     """Format email text based on Work Order Type"""
@@ -778,7 +754,6 @@ def formatting_texts_email(CX_Name, serial_val, case_number, df):
     )
 
     return email_text
-
 
 def send_SMS(driver, sms_text):
     """Send SMS via Dynamics CRM"""
@@ -909,7 +884,6 @@ def send_SMS(driver, sms_text):
 
     return sms_sent
 
-
 def verify_email_domain_selected(driver, expected_title="NA Think Care", expected_text="NA Think Care", timeout=3, poll=0.5, retries=3):
     xpath = "//*[@data-id='from.fieldControl-LookupResultsDropdown_from_selected_tag_text']"
     def _check(d):
@@ -921,7 +895,6 @@ def verify_email_domain_selected(driver, expected_title="NA Think Care", expecte
         except Exception:
             return False
     return _check(driver)
-
 
 def select_from_email(driver):
     """Handle selecting the 'From' email address"""
@@ -941,7 +914,6 @@ def select_from_email(driver):
         poll=0.5, 
         retries=3
     )
-
 
 def send_Email(driver, email_text):
     """Send email via Dynamics CRM"""
@@ -975,7 +947,6 @@ def send_Email(driver, email_text):
     
     time.sleep(3)
     return True
-
 
 def add_Case_Note(driver, CaseNote):
     """Add a case note in Dynamics CRM"""
@@ -1073,7 +1044,6 @@ def add_Case_Note(driver, CaseNote):
     
     return note_saved
 
-
 def DND_CX(driver, case_number):
     """Mark contact as DND (Do Not Disturb)"""
     contact_xpath = "//a[contains(@id,'id-915f6055-2e07-4276-ae08-2b96c8d02c57') and contains(@id,'sec_tab_contact-associatedEntityRecordName')]"
@@ -1093,7 +1063,6 @@ def DND_CX(driver, case_number):
 
         save_xpath = "//button[contains(@id,'contact|NoRelationship|Form|lvidg.contact.TimeTrackingCheckIn.Command') and contains(@id,'button')]"
         click_safe(driver, By.XPATH, save_xpath, timeout=1, retries=5)
-
 
 def excelCaseClosingCode(CaseClosingCode):
     """Convert closing code to Excel-friendly format"""
@@ -1139,7 +1108,6 @@ def excelCaseClosingCode(CaseClosingCode):
         case _:
             return ""
 
-
 # ============================================================================
 # DIALER FUNCTIONS
 # ============================================================================
@@ -1158,8 +1126,7 @@ def switch_to_crm_window(driver, max_retries=5):
             time.sleep(wait_time)
         
         handles = driver.window_handles
-        print(f"[DEBUG] Attempt {attempt}: Found {len(handles)} window handles")
-        
+
         if len(handles) < 2:
             print(f"[ERROR] Expected 2+ windows, but found {len(handles)}")
             continue
@@ -1169,8 +1136,7 @@ def switch_to_crm_window(driver, max_retries=5):
             try:
                 driver.switch_to.window(handle)
                 current_url = driver.current_url.lower()
-                print(f"[DEBUG] Handle URL: {current_url}")
-                
+
                 if any(pattern in current_url for pattern in crm_url_patterns):
                     crm_handle = handle
                     print(f"[INFO] Found CRM window by URL pattern")
@@ -1180,7 +1146,7 @@ def switch_to_crm_window(driver, max_retries=5):
                 continue
         
         if crm_handle is None and len(handles) >= 2:
-            print(f"[DEBUG] URL matching failed, trying element-based detection...")
+
             for handle in handles:
                 try:
                     driver.switch_to.window(handle)
@@ -1193,7 +1159,7 @@ def switch_to_crm_window(driver, max_retries=5):
                     continue
         
         if crm_handle is None:
-            print(f"[DEBUG] Element detection failed, trying index-based fallback...")
+
             for idx, handle in enumerate(handles):
                 if idx != 0:
                     try:
@@ -1230,7 +1196,6 @@ def switch_to_crm_window(driver, max_retries=5):
     print(f"[CRITICAL] Failed to switch to CRM window after {max_retries} attempts")
     return False
 
-
 def perform_dialer_login(driver):
     """
     Login to dialer.
@@ -1263,7 +1228,6 @@ def perform_dialer_login(driver):
         return False
     
     return True
-
 
 def perform_call_flow(driver):
     """Perform call flow via dialer"""
@@ -1317,7 +1281,6 @@ def perform_call_flow(driver):
         print(f"[WARN] perform_call_flow encountered an error: {e}")
         traceback.print_exc()
         return False
-
 
 # ============================================================================
 # FILE SEARCH POPUP - Shows when file is not found with retry countdown
@@ -1469,7 +1432,6 @@ def show_file_search_popup(excel_path, retry_interval_seconds=10):
     
     return result["action"], result["path"]
 
-
 # ============================================================================
 # COMPANIES PROCESS - Functions for processing company cases
 # ============================================================================
@@ -1546,7 +1508,6 @@ class CompaniesProcessDialog(QDialog):
         self.result = "SKIP"
         self.accept()
 
-
 def load_companies_for_handler(cache_file, handler_name, sheet_name="Companies"):
     """Load Companies sheet cases assigned to handler, grouped by email"""
     try:
@@ -1606,7 +1567,6 @@ def load_companies_for_handler(cache_file, handler_name, sheet_name="Companies")
         print(f"[ERROR] Failed to load companies for handler: {e}")
         return {}, pd.DataFrame()
 
-
 def build_companies_email_body(cases_info, agent_name):
     """Build email body with Case Number | Serial/MTM format matching CRU/Onsite template"""
     devices_list = []
@@ -1641,7 +1601,6 @@ def build_companies_email_body(cases_info, agent_name):
         "NA Lenovo PC Assurance Resolution Team"
     )
     return email_body
-
 
 def show_companies_email_confirmation(email, cases_info, email_body, cases_left=0, email_groups_left=0):
     """Show email preview with confirmation - IBM Carbon Design"""
@@ -1762,7 +1721,6 @@ def show_companies_email_confirmation(email, cases_info, email_body, cases_left=
     dialog = EmailConfirmDialog()
     dialog.exec_()
     return dialog.confirmed
-
 
 def case_search_and_open_no_edit(driver, case_number):
     """

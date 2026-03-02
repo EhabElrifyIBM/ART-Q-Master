@@ -87,7 +87,6 @@ from SharedFunctions import (
 # CRM URL - Dynamics 365
 CRM_URL = "https://lenovo-plrs-prod.crm5.dynamics.com/main.aspx?appid=00fd771a-9081-e911-a83a-000d3a07fba2&forceUCI=1&pagetype=dashboard&id=4e76815a-1f63-df11-ae90-00155d2e3002&type=system&_canOverride=true"
 
-
 # ============================================================================
 # PHASE 4.2: CACHE RESUME ENHANCEMENTS
 # ============================================================================
@@ -135,7 +134,6 @@ def count_remaining_cases(cache_file, sheet_name=EXCEL_SHEET_NAME):
     except Exception as e:
         print(f"[WARN] Error counting remaining cases: {e}")
         return 0, "Unable to determine remaining cases"
-
 
 def check_existing_cache_and_ask_enhanced(cache_path, mode_name="Case Reviewer"):
     """
@@ -246,7 +244,6 @@ def check_existing_cache_and_ask_enhanced(cache_path, mode_name="Case Reviewer")
     dialog = EnhancedResumeDialog()
     dialog.exec_()
     return dialog.result
-
 
 # ============================================================================
 # CASE REVIEWER DIALOG
@@ -472,9 +469,9 @@ def get_case_closing_code(case_number, cases_completed_count, total_in_progress_
                 
                 from ui.settings_aware_dialog import apply_font_to_widget_and_children
                 apply_font_to_widget_and_children(self, font_size)
-            except Exception as e:
-                print(f"[DEBUG] Could not apply initial font size: {e}")
-        
+            except Exception:
+                pass
+
         def _create_section_header(self, title):
             """IBM Carbon section header: bold label with blue bottom border"""
             from PyQt5.QtGui import QFont
@@ -660,7 +657,6 @@ def get_case_closing_code(case_number, cases_completed_count, total_in_progress_
     
     return result_code, result_note
 
-
 def get_call_closing_code():
     """
     Opens a call outcome dialog for the current call.
@@ -798,7 +794,6 @@ def get_call_closing_code():
     print(f"[INFO] Call closing code selected: {result_code}, add_note={result_note}")
     
     return result_code, result_note
-
 
 # ============================================================================
 # MAIN CASE REVIEWER FUNCTION
@@ -1069,7 +1064,7 @@ def run_case_reviewer(support_agent=None):
                         continue
                 
                 # Create case note
-                print(f"[DEBUG] Creating case note for code: {CaseClosingCode}")
+
                 CaseNote = get_case_note(f"Case is Reviewed with closing code {CaseClosingCode}")
                 
                 # If user requested adding a Case Note
@@ -1201,14 +1196,14 @@ def run_case_reviewer(support_agent=None):
                 
                 # Still in Review (Need Third Action) - leave all columns untouched, just move to next case
                 if CaseClosingCode == "Need Third Action":
-                    print(f"[DEBUG] Still in Review - leaving case untouched, moving to next...")
+
                     case_counter += 1
                     pointer += 1
                     continue
                 
                 # Skipped - mark as Skipped and move on
                 if CaseClosingCode == "Skipped":
-                    print(f"[DEBUG] Skipping case...")
+
                     df.at[idx, "Status"] = 'Skipped'
                     update_cache_file(cache_file, df, EXCEL_SHEET_NAME)
                     case_counter += 1
@@ -1272,7 +1267,6 @@ def run_case_reviewer(support_agent=None):
         except Exception as e:
             print(f"[WARN] Error disabling Windows inhibit: {e}")
 
-
 def show_completion_dialog(processed, total):
     """Show completion dialog with results"""
     try:
@@ -1289,7 +1283,6 @@ def show_completion_dialog(processed, total):
         )
     except Exception as e:
         print(f"[WARN] Could not show completion dialog: {e}")
-
 
 if __name__ == "__main__":
     run_case_reviewer()

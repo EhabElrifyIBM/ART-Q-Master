@@ -38,7 +38,6 @@ art_q_dir = os_module.path.dirname(os_module.path.abspath(__file__))
 if art_q_dir not in sys.path:
     sys.path.insert(0, art_q_dir)
 
-
 # Import shared functions
 from SharedFunctions import (
     CONFIG_MANAGER,
@@ -75,7 +74,6 @@ from SharedFunctions import (
 
 # CRM URL - Dynamics 365
 CRM_URL = "https://lenovo-plrs-prod.crm5.dynamics.com/main.aspx?appid=00fd771a-9081-e911-a83a-000d3a07fba2&forceUCI=1&pagetype=dashboard&id=4e76815a-1f63-df11-ae90-00155d2e3002&type=system&_canOverride=true"
-
 
 # ============================================================================
 # WORKER THREAD CLASS - Keeps UI responsive during long operations
@@ -115,17 +113,17 @@ class AutoSenderWorker(QThread):
     
     def set_pause(self, paused):
         """Set pause flag"""
-        print(f"[DEBUG] Worker: set_pause({paused}) called")
+
         self._pause_flag = paused
     
     def set_stop(self, stop):
         """Set stop flag"""
-        print(f"[DEBUG] Worker: set_stop({stop}) called")
+
         self._stop_flag = stop
     
     def set_abort(self, abort):
         """Set abort flag"""
-        print(f"[DEBUG] Worker: set_abort({abort}) called")
+
         self._abort_flag = abort
     
     def run(self):
@@ -147,19 +145,18 @@ class AutoSenderWorker(QThread):
             for idx, row in self.df.iterrows():
                 # Check abort flag
                 if self._abort_flag:
-                    print("[DEBUG] Worker: Abort flag detected - breaking loop")
+
                     self.log_message.emit("AutoSender aborted by user!", "ERROR")
                     break
                 
                 # Check pause flag
                 if self._pause_flag:
-                    print("[DEBUG] Worker: Pause flag detected - entering pause loop")
-                
+                    pass  # handled by while loop below
+
                 while self._pause_flag:
                     time.sleep(0.1)
                     if self._abort_flag:
-                        print("[DEBUG] Worker: Abort detected during pause - breaking")
-                        break
+                        pass
                 
                 if self._abort_flag:
                     break
@@ -192,10 +189,10 @@ class AutoSenderWorker(QThread):
                     
                     # Check pause/abort before searching case
                     if self._abort_flag:
-                        print("[DEBUG] Worker: Abort detected before case search")
+
                         break
                     if self._pause_flag:
-                        print("[DEBUG] Worker: Pause detected before case search - waiting")
+
                         while self._pause_flag and not self._abort_flag:
                             time.sleep(0.1)
                         if self._abort_flag:
@@ -206,10 +203,10 @@ class AutoSenderWorker(QThread):
                     
                     # Check pause/abort before checking solution
                     if self._abort_flag:
-                        print("[DEBUG] Worker: Abort detected before solution check")
+
                         break
                     if self._pause_flag:
-                        print("[DEBUG] Worker: Pause detected before solution check - waiting")
+
                         while self._pause_flag and not self._abort_flag:
                             time.sleep(0.1)
                         if self._abort_flag:
@@ -229,10 +226,10 @@ class AutoSenderWorker(QThread):
                     
                     # Check pause/abort before clicking edit
                     if self._abort_flag:
-                        print("[DEBUG] Worker: Abort detected before edit click")
+
                         break
                     if self._pause_flag:
-                        print("[DEBUG] Worker: Pause detected before edit click - waiting")
+
                         while self._pause_flag and not self._abort_flag:
                             time.sleep(0.1)
                         if self._abort_flag:
@@ -261,10 +258,10 @@ class AutoSenderWorker(QThread):
                     
                     # Check pause/abort before SMS
                     if self._abort_flag:
-                        print("[DEBUG] Worker: Abort detected before SMS")
+
                         break
                     if self._pause_flag:
-                        print("[DEBUG] Worker: Pause detected before SMS - waiting")
+
                         while self._pause_flag and not self._abort_flag:
                             time.sleep(0.1)
                         if self._abort_flag:
@@ -285,10 +282,10 @@ class AutoSenderWorker(QThread):
                     
                     # Check pause/abort before Email
                     if self._abort_flag:
-                        print("[DEBUG] Worker: Abort detected before Email")
+
                         break
                     if self._pause_flag:
-                        print("[DEBUG] Worker: Pause detected before Email - waiting")
+
                         while self._pause_flag and not self._abort_flag:
                             time.sleep(0.1)
                         if self._abort_flag:
@@ -309,10 +306,10 @@ class AutoSenderWorker(QThread):
                     
                     # Check pause/abort before Case Note
                     if self._abort_flag:
-                        print("[DEBUG] Worker: Abort detected before Case Note")
+
                         break
                     if self._pause_flag:
-                        print("[DEBUG] Worker: Pause detected before Case Note - waiting")
+
                         while self._pause_flag and not self._abort_flag:
                             time.sleep(0.1)
                         if self._abort_flag:
@@ -369,7 +366,6 @@ class AutoSenderWorker(QThread):
         except Exception as e:
             self.log_message.emit(f"Critical error in worker thread: {str(e)}", "ERROR")
             self.finished.emit("Error", self.processed_count, 0)
-
 
 def case_search_and_open_no_edit(driver, case_number):
     """
@@ -437,7 +433,6 @@ def case_search_and_open_no_edit(driver, case_number):
     time.sleep(3)
     # NOTE: Edit button is NOT clicked here - done after solution check
 
-
 def click_edit_button(driver):
     """Click the Edit button to start editing a case"""
     click_safe(
@@ -449,7 +444,6 @@ def click_edit_button(driver):
     )
     #sleep timer
     time.sleep(3)
-
 
 def count_remaining_cases(cache_file, sheet_name=EXCEL_SHEET_NAME):
     """
@@ -495,7 +489,6 @@ def count_remaining_cases(cache_file, sheet_name=EXCEL_SHEET_NAME):
     except Exception as e:
         print(f"[WARN] Error counting remaining cases: {e}")
         return 0, "Unable to determine remaining cases"
-
 
 def check_existing_cache_and_ask_enhanced(cache_path, mode_name="Auto Sender"):
     """
@@ -613,7 +606,6 @@ def check_existing_cache_and_ask_enhanced(cache_path, mode_name="Auto Sender"):
     dialog = EnhancedResumeDialog()
     dialog.exec_()
     return dialog.result
-
 
 def run_auto_sender(excel_path=None, support_agent=None):
     """
@@ -800,7 +792,7 @@ def run_auto_sender(excel_path=None, support_agent=None):
             # Verify the cache file was written correctly
             try:
                 with pd.ExcelFile(cache_file) as verify_xls:
-                    print(f"[DEBUG] Verification - Cache file sheets: {verify_xls.sheet_names}")
+                    pass  # verify file is readable
             except Exception as ve:
                 print(f"[WARN] Could not verify cache file: {ve}")
             print(f"[INFO] Working cache created with {len(df_filtered)} cases")
@@ -927,7 +919,6 @@ def run_auto_sender(excel_path=None, support_agent=None):
         except Exception as e:
             print(f"[WARN] Error disabling Windows inhibit: {e}")
 
-
 def on_worker_finished(progress_monitor, reason, processed, total):
     """
     Callback when worker thread finishes.
@@ -935,7 +926,6 @@ def on_worker_finished(progress_monitor, reason, processed, total):
     """
     progress_monitor.finish_process(reason)
     print(f"[INFO] Worker thread finished: {reason} - {processed}/{total} cases processed")
-
 
 def show_completion_dialog(processed, total):
     """Show completion dialog with results"""
@@ -953,7 +943,6 @@ def show_completion_dialog(processed, total):
         )
     except Exception as e:
         print(f"[WARN] Could not show completion dialog: {e}")
-
 
 if __name__ == "__main__":
     run_auto_sender()

@@ -83,7 +83,6 @@ from CaseReviewer_v2 import get_call_closing_code
 # CRM URL for navigation
 CRM_URL = "https://lenovo-plrs-prod.crm5.dynamics.com/main.aspx?appid=00fd771a-9081-e911-a83a-000d3a07fba2&forceUCI=1&pagetype=dashboard&id=4e76815a-1f63-df11-ae90-00155d2e3002&type=system&_canOverride=true"
 
-
 def show_per_case_outcomes_dialog(email, cases, batch_index=1, total_batches=1):
     """
     Shows a dialog allowing the user to set individual outcomes for each case in a company batch.
@@ -327,9 +326,9 @@ def show_per_case_outcomes_dialog(email, cases, batch_index=1, total_batches=1):
                 
                 from ui.settings_aware_dialog import apply_font_to_widget_and_children
                 apply_font_to_widget_and_children(self, font_size)
-            except Exception as e:
-                print(f"[DEBUG] Could not apply initial font size: {e}")
-        
+            except Exception:
+                pass
+
         def on_theme_changed(self, theme: str):
             """Handle theme changes — applies full IBM QSS."""
             from ibm_theme import get_qss, IBM
@@ -390,8 +389,6 @@ def show_per_case_outcomes_dialog(email, cases, batch_index=1, total_batches=1):
     else:
         print(f"[INFO] Per-case outcomes dialog cancelled")
         return None
-
-
 
 def run_companies_process(driver, cache_file, agent_name, sheet_name="Companies", font_settings=None):
     """
@@ -686,7 +683,6 @@ def run_companies_process(driver, cache_file, agent_name, sheet_name="Companies"
     
     print("\n[INFO] === Companies Process Complete ===")
 
-
 # ============================================================================
 # NEW: Standalone Companies Process Runner (Phase 5.1)
 # ============================================================================
@@ -732,7 +728,7 @@ def run_companies_process_standalone(support_agent=None):
                 font_settings = theme_manager.get_font_settings()
                 print("[INFO] ✓ Font settings cached")
         except Exception as e:
-            print(f"[DEBUG] Could not get font settings: {e}")
+
             font_settings = None
         
         print("[INFO] ✓ Theme Manager initialized (Phase 3.2)")
@@ -896,7 +892,6 @@ def run_companies_process_standalone(support_agent=None):
             disable_windows_inhibit()
         except Exception as e:
             print(f"[WARN] Error disabling Windows inhibit: {e}")
-
 
 if __name__ == "__main__":
     print("[INFO] CompaniesProcess_v2 module - run via Dispatcher or standalone")

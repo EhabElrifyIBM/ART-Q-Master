@@ -455,33 +455,32 @@ class ProgressMonitor(QDialog):
             level: Log level (INFO, SUCCESS, WARNING, ERROR)
         """
         timestamp = datetime.now().strftime("%H:%M:%S")
-        
-        # Color coding based on level
-        level_colors = {
-            "INFO": "#0066CC",
-            "SUCCESS": "#00AA00",
-            "WARNING": "#FF8800",
-            "ERROR": "#CC0000",
-            "ETICKET": "#8E24AA"
+
+        # IBM Carbon color tokens per level
+        _colors = {
+            "INFO":    "#0f62fe",   # IBM Blue
+            "SUCCESS": "#198038",   # IBM Green
+            "WARNING": "#f1c21b",   # IBM Yellow
+            "ERROR":   "#da1e28",   # IBM Red
+            "ETICKET": "#6929c4",   # IBM Purple
+            "STEP":    "#005d5d",   # IBM Teal
+            "DEBUG":   "#8d8d8d",   # IBM Grey — muted
         }
-        
-        color = level_colors.get(level, "#000000")
-        # Special formatting for eticket
-        if level == "ETICKET":
-            log_entry = f'<span style="color: {color}; font-weight:bold;">[{timestamp}] [ETICKET] {message}</span>'
-        elif level == "WARNING":
-            log_entry = f'<span style="color: {color}; font-weight:bold;">[{timestamp}] [WARNING] {message}</span>'
-        elif level == "ERROR":
-            log_entry = f'<span style="color: {color}; font-weight:bold; text-decoration:underline;">[{timestamp}] [ERROR] {message}</span>'
-        else:
-            log_entry = f'<span style="color: {color};">[{timestamp}] [{level}] {message}</span>'
+        color  = _colors.get(level, "#161616")
+        bold   = level in ("WARNING", "ERROR", "ETICKET")
+        weight = "font-weight:700;" if bold else ""
+        sym    = {"INFO": "›", "SUCCESS": "✓", "WARNING": "⚠",
+                  "ERROR": "✗", "ETICKET": "⚡", "STEP": "→"}.get(level, "·")
+
+        log_entry = (
+            f'<span style="color:#8d8d8d;">{timestamp}</span>'
+            f'&nbsp;<span style="color:{color};{weight}">{sym}&nbsp;{message}</span>'
+        )
         self.log_text.append(log_entry)
-        
+
         # Auto-scroll to bottom
         scrollbar = self.log_text.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
-        
-        # Process pending events FREQUENTLY to keep UI responsive
         QApplication.processEvents()
     
     def log_success(self, message):
@@ -501,9 +500,19 @@ class ProgressMonitor(QDialog):
             status_text: Status text to display
             is_error: If True, display in red (error status)
         """
-        color = "#CC0000" if is_error else "#333333"
-        self.status_label.setText(status_text)
-        self.status_label.setStyleSheet(f"font-size: 12px; color: {color};")
+        try:
+            from ibm_theme import IBM
+            _c = IBM.LIGHT
+            danger_color = _c['danger']
+            sec_color    = _c['text_secondary']
+        except Exception:
+            danger_color = '#da1e28'
+            sec_color    = '#525252'
+        color = danger_color if is_error else sec_color
+        self.status_label.setText(f"Status: {status_text}")
+        self.status_label.setStyleSheet(
+            f"color: {color}; background: transparent;"
+        )
     
     # ========== CONTROL METHODS ==========
     
@@ -536,27 +545,23 @@ class ProgressMonitor(QDialog):
     def _on_pause_clicked(self):
         """Handle pause button click"""
         if not self._pause_flag:
-            print("[DEBUG] Pause button clicked - emitting pause_requested signal")
             self._pause_flag = True
             self.state = ProcessState.PAUSED
             self.pause_btn.setEnabled(False)
             self.resume_btn.setEnabled(True)
-            self.set_status("Status: ⏸ PAUSED - Process paused, waiting to resume...")
-            self.log_warning("Process PAUSED by user")
-            # EMIT SIGNAL to notify worker thread
+            self.set_status("Paused — waiting to resume", is_error=False)
+            self.log_warning("Process paused by user")
             self.pause_requested.emit()
     
     def _on_resume_clicked(self):
         """Handle resume button click"""
         if self._pause_flag:
-            print("[DEBUG] Resume button clicked - emitting resume_requested signal")
             self._pause_flag = False
             self.state = ProcessState.RUNNING
             self.pause_btn.setEnabled(True)
             self.resume_btn.setEnabled(False)
-            self.set_status("Status: Processing... (resumed)")
-            self.log_message("Process RESUMED by user")
-            # EMIT SIGNAL to notify worker thread
+            self.set_status("Processing (resumed)")
+            self.log_message("Process resumed", "INFO")
             self.resume_requested.emit()
     
     def _on_stop_clicked(self):
