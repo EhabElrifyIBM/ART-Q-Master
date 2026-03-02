@@ -1,0 +1,51 @@
+# Python virtual environments
+.venv/
+__.venv/
+
+# VS Code settings
+.vscode/
+
+# Build and distribution outputs
+build/
+dist/
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Log files
+*.log
+src/logs/
+
+# Cache and handler files
+handlers_cache.json
+
+# Errors and screenshots
+errors/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Ignore generated executables and packages
+*.exe
+*.pkg
+*.toc
+*.zip
+*.html
+*.txt
+
+# Ignore assets if not needed
+assets/
+
+# Ignore spec files if not needed
+*.spec
+
+# Ignore theme and config files if not needed
+# theme_config.json
+# config.json
+
+# Ignore documentation if not needed
+# docs/
