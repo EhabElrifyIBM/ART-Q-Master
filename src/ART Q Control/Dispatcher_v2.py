@@ -141,124 +141,216 @@ def show_mode_selector():
     dialog = ModeSelectionDialog()
     font = QFont('IBM Plex Sans', _font_size)
     dialog.setWindowTitle("ART Q Control — Mode Selector")
-    dialog.setMinimumSize(700, 820)
-    dialog.resize(700, 820)
+    dialog.setMinimumSize(560, 720)
+    dialog.setMaximumSize(700, 820)
+    dialog.resize(580, 740)
     dialog.setFont(font)
     
+    # Root layout
     layout = QVBoxLayout()
-    layout.setContentsMargins(32, 28, 32, 24)
-    layout.setSpacing(16)
+    layout.setContentsMargins(28, 20, 28, 16)
+    layout.setSpacing(0)
 
-    # ========== TITLE ==========
+    # ========== HEADER ==========
     c = IBM.DARK if _current_theme == 'dark' else IBM.LIGHT
-    title = QLabel("ART AUTOMATION SYSTEM")
-    title.setAlignment(Qt.AlignCenter)
-    title.setFont(QFont('IBM Plex Sans', _font_size + 4, QFont.Bold))
-    title.setStyleSheet(f"font-weight: 700; color: {c['interactive']}; padding: 8px; letter-spacing: 1px;")
-    layout.addWidget(title)
 
-    # ========== CONFIGURATION INFO CARD ==========
+    # App logo row
+    header_row = QHBoxLayout()
+    header_row.setSpacing(0)
+    badge = QLabel("ART")
+    badge.setFixedSize(44, 44)
+    badge.setAlignment(Qt.AlignCenter)
+    badge.setStyleSheet(
+        f"background: {c['interactive']}; color: #ffffff;"
+        f" font-family: 'IBM Plex Sans','Segoe UI',Arial;"
+        f" font-size: {_font_size}pt; font-weight: 800;"
+        f" border-radius: 4px;"
+    )
+    header_row.addWidget(badge)
+    header_row.addSpacing(12)
+
+    title_col = QVBoxLayout()
+    title_col.setSpacing(0)
+    title = QLabel("ART Q Control")
+    title.setFont(QFont('IBM Plex Sans', _font_size + 2, QFont.Bold))
+    title.setStyleSheet(f"font-weight: 700; color: {c['text_primary']}; background: transparent;")
+    subtitle_lbl = QLabel("Automation · IBM Assurance Resolution Team")
+    subtitle_lbl.setFont(QFont('IBM Plex Sans', _font_size - 3))
+    subtitle_lbl.setStyleSheet(f"color: {c['text_secondary']}; background: transparent;")
+    title_col.addWidget(title)
+    title_col.addWidget(subtitle_lbl)
+    header_row.addLayout(title_col)
+    header_row.addStretch()
+    layout.addLayout(header_row)
+    layout.addSpacing(16)
+
+    # ========== CONFIG INFO CARD (Compact) ==========
     config_frame = QFrame()
-    config_frame.setProperty('role', 'card-blue')
     config_frame.setStyleSheet(
         f"background-color: {c['layer_01']};"
-        f"border-left: 4px solid {c['interactive']};"
+        f"border-left: 3px solid {c['interactive']};"
         f"border-top: 1px solid {c['border_subtle']};"
         f"border-right: 1px solid {c['border_subtle']};"
         f"border-bottom: 1px solid {c['border_subtle']};"
         f"border-radius: 0px;"
     )
     config_layout = QVBoxLayout(config_frame)
-    config_layout.setContentsMargins(16, 12, 16, 12)
-    config_layout.setSpacing(4)
+    config_layout.setContentsMargins(12, 8, 12, 8)
+    config_layout.setSpacing(2)
 
-    config_title = QLabel("Current Configuration")
-    config_title.setFont(QFont('IBM Plex Sans', _font_size - 1, QFont.Bold))
-    config_title.setStyleSheet(f"font-weight: 700; color: {c['text_secondary']}; text-transform: uppercase; letter-spacing: 0.5px; background: transparent; border: none;")
+    config_title = QLabel("SESSION CONFIG")
+    config_title.setFont(QFont('IBM Plex Sans', _font_size - 4, QFont.Bold))
+    config_title.setStyleSheet(
+        f"font-weight: 700; color: {c['text_secondary']};"
+        f" letter-spacing: 1px; background: transparent; border: none;"
+    )
     config_layout.addWidget(config_title)
 
     config_info = QLabel(
-        f"<table cellpadding='3'>"
-        f"<tr><td><b>Agent:</b></td><td>{AGENT_NAME}</td></tr>"
-        f"<tr><td><b>User ID:</b></td><td>{DIALER_USERNAME}</td></tr>"
-        f"<tr><td><b>Excel Path:</b></td><td>{EXCEL_BASE_PATH}</td></tr>"
-        f"<tr><td><b>Cache Dir:</b></td><td>{CACHE_DIRECTORY}</td></tr>"
-        f"<tr><td><b>Sheet:</b></td><td>{EXCEL_SHEET_NAME}</td></tr>"
+        f"<table cellpadding='2'>"
+        f"<tr><td style='color:{c['text_secondary']};'><b>Agent</b></td>"
+        f"<td style='padding-left:12px;color:{c['text_primary']};'>{AGENT_NAME}</td>"
+        f"<td style='padding-left:20px;color:{c['text_secondary']};'><b>User&nbsp;ID</b></td>"
+        f"<td style='padding-left:12px;color:{c['text_primary']};'>{DIALER_USERNAME}</td></tr>"
+        f"<tr><td style='color:{c['text_secondary']};'><b>Sheet</b></td>"
+        f"<td style='padding-left:12px;color:{c['text_primary']};'>{EXCEL_SHEET_NAME}</td>"
+        f"<td style='padding-left:20px;color:{c['text_secondary']};'><b>Excel</b></td>"
+        f"<td style='padding-left:12px;color:{c['text_primary']};font-size:{_font_size-4}pt;'>{EXCEL_BASE_PATH}</td></tr>"
         f"</table>"
     )
-    config_info.setFont(QFont('IBM Plex Sans', _font_size - 1))
-    config_info.setStyleSheet(f"color: {c['text_secondary']}; background: transparent; border: none;")
+    config_info.setFont(QFont('IBM Plex Sans', _font_size - 2))
+    config_info.setStyleSheet(f"background: transparent; border: none;")
+    config_info.setWordWrap(True)
     config_layout.addWidget(config_info)
     layout.addWidget(config_frame)
+    layout.addSpacing(20)
+
+    # ========== SECTION LABEL: SELECT MODE ==========
+    mode_label = QLabel("SELECT MODE")
+    mode_label.setFont(QFont('IBM Plex Sans', _font_size - 4, QFont.Bold))
+    mode_label.setStyleSheet(
+        f"color: {c['text_secondary']}; letter-spacing: 1px;"
+        f" font-weight: 700; background: transparent;"
+        f" border-bottom: 1px solid {c['border_subtle']};"
+        f" padding-bottom: 4px;"
+    )
+    layout.addWidget(mode_label)
+    layout.addSpacing(8)
 
     # ========== MODE BUTTONS — IBM Accent Cards ==========
+    _mode_btn_style_base = (
+        "QPushButton {{ "
+        "  background-color: {bg}; color: #ffffff;"
+        "  border: none; border-radius: 4px;"
+        "  font-family: 'IBM Plex Sans','Segoe UI',Arial;"
+        "  font-size: {fs}pt; font-weight: 700;"
+        "  padding: 0 20px;"
+        "  text-align: left;"
+        "}}"
+        "QPushButton:hover {{ background-color: {hover}; }}"
+        "QPushButton:pressed {{ background-color: {active}; }}"
+    )
+
     # Auto Sender — IBM Blue
-    auto_sender_btn = QPushButton("  Auto Sender\n  Process new cases  ·  SMS + Email + Note")
+    auto_sender_btn = QPushButton()
+    auto_sender_btn.setText(
+        f"Auto Sender\n"
+        f"Process new cases  ·  SMS + Email + Case Note"
+    )
     auto_sender_btn.setFont(QFont('IBM Plex Sans', _font_size, QFont.Bold))
-    auto_sender_btn.setStyleSheet(get_mode_card_style(c['interactive'], c['interactive_hover'], _current_theme))
+    auto_sender_btn.setFixedHeight(76)
+    auto_sender_btn.setStyleSheet(
+        _mode_btn_style_base.format(
+            bg=c['interactive'],
+            hover=c['interactive_hover'],
+            active=c.get('interactive_active', c['interactive_hover']),
+            fs=_font_size
+        )
+    )
     auto_sender_btn.clicked.connect(lambda: dialog.done(1))
     layout.addWidget(auto_sender_btn)
+    layout.addSpacing(8)
 
     # Case Reviewer — IBM Purple
-    case_reviewer_btn = QPushButton("  Case Reviewer\n  Review in-progress cases  ·  With Dialer")
+    case_reviewer_btn = QPushButton()
+    case_reviewer_btn.setText(
+        f"Case Reviewer\n"
+        f"Review in-progress cases  ·  With Dialer"
+    )
     case_reviewer_btn.setFont(QFont('IBM Plex Sans', _font_size, QFont.Bold))
-    case_reviewer_btn.setStyleSheet(get_mode_card_style(c['purple'], c['purple_hover'], _current_theme))
+    case_reviewer_btn.setFixedHeight(76)
+    case_reviewer_btn.setStyleSheet(
+        _mode_btn_style_base.format(
+            bg=c['purple'],
+            hover=c['purple_hover'],
+            active=c['purple_hover'],
+            fs=_font_size
+        )
+    )
     case_reviewer_btn.clicked.connect(lambda: dialog.done(2))
     layout.addWidget(case_reviewer_btn)
+    layout.addSpacing(8)
 
     # Company Process — IBM Teal
-    company_process_btn = QPushButton("  Company Process\n  Batch process grouped company cases")
+    company_process_btn = QPushButton()
+    company_process_btn.setText(
+        f"Company Process\n"
+        f"Batch process grouped company cases"
+    )
     company_process_btn.setFont(QFont('IBM Plex Sans', _font_size, QFont.Bold))
-    company_process_btn.setStyleSheet(get_mode_card_style(c['teal'], c['teal_hover'], _current_theme))
+    company_process_btn.setFixedHeight(76)
+    company_process_btn.setStyleSheet(
+        _mode_btn_style_base.format(
+            bg=c['teal'],
+            hover=c['teal_hover'],
+            active=c['teal_hover'],
+            fs=_font_size
+        )
+    )
     company_process_btn.clicked.connect(lambda: dialog.done(5))
     layout.addWidget(company_process_btn)
+    layout.addSpacing(16)
 
-    # ========== BOTTOM GHOST BUTTONS ==========
-    bottom_layout = QHBoxLayout()
-    bottom_layout.setSpacing(12)
+    # ========== SUPPORT CHECKBOX ==========
+    support_checkbox = QCheckBox("Supporting another agent")
+    support_checkbox.setFont(QFont('IBM Plex Sans', _font_size - 1))
+    support_checkbox.setStyleSheet(f"color: {c['text_primary']}; background: transparent;")
+    layout.addWidget(support_checkbox)
+    layout.addSpacing(12)
 
-    update_btn = QPushButton("Update Configuration")
-    update_btn.setFont(QFont('IBM Plex Sans', _font_size))
-    update_btn.setProperty('role', 'ghost')
-    update_btn.setStyleSheet(
+    # ========== UTILITY ROW: ghost buttons on one line ==========
+    _ghost = (
         f"QPushButton {{ background-color: transparent; color: {c['text_secondary']};"
         f" border: 1px solid {c['border_subtle']}; border-radius: 4px;"
-        f" font-family: 'IBM Plex Sans', 'Segoe UI', Arial; font-size: {_font_size}pt;"
-        f" padding: 10px 18px; min-height: 40px; }}"
+        f" font-family: 'IBM Plex Sans','Segoe UI',Arial; font-size: {_font_size - 2}pt;"
+        f" padding: 8px 14px; min-height: 36px; }}"
         f"QPushButton:hover {{ background-color: {c['layer_02']}; color: {c['text_primary']}; }}"
     )
+    bottom_layout = QHBoxLayout()
+    bottom_layout.setSpacing(10)
+
+    update_btn = QPushButton("Update Configuration")
+    update_btn.setFont(QFont('IBM Plex Sans', _font_size - 2))
+    update_btn.setStyleSheet(_ghost)
     update_btn.clicked.connect(lambda: dialog.done(3))
     bottom_layout.addWidget(update_btn)
 
     main_menu_btn = QPushButton("Main Menu")
-    main_menu_btn.setFont(QFont('IBM Plex Sans', _font_size))
-    main_menu_btn.setStyleSheet(
-        f"QPushButton {{ background-color: transparent; color: {c['text_secondary']};"
-        f" border: 1px solid {c['border_subtle']}; border-radius: 4px;"
-        f" font-family: 'IBM Plex Sans', 'Segoe UI', Arial; font-size: {_font_size}pt;"
-        f" padding: 10px 18px; min-height: 40px; }}"
-        f"QPushButton:hover {{ background-color: {c['layer_02']}; color: {c['text_primary']}; }}"
-    )
+    main_menu_btn.setFont(QFont('IBM Plex Sans', _font_size - 2))
+    main_menu_btn.setStyleSheet(_ghost)
     main_menu_btn.clicked.connect(lambda: dialog.done(4))
     bottom_layout.addWidget(main_menu_btn)
-
+    bottom_layout.addStretch()
     layout.addLayout(bottom_layout)
 
-    # ========== SUPPORT MODE CHECKBOX ==========
-    support_checkbox = QCheckBox("Supporting another agent")
-    support_checkbox.setFont(QFont('IBM Plex Sans', _font_size))
-    support_checkbox.setStyleSheet(f"padding: 6px; color: {c['text_primary']};")
-    layout.addWidget(support_checkbox)
+    layout.addStretch(1)
 
     # ========== FOOTER ==========
     footer = QLabel(
-        f'<span style="color:{c["text_secondary"]};font-size:{_font_size - 2}pt;">'
-        'Developed by: Ehab Elrify | Adam Maged<br>'
-        f'<a href="mailto:ehab.elrify@ibm.com" style="color:{c["interactive"]}">ehab.elrify@ibm.com</a> | '
-        f'<a href="mailto:abdelrahman.maged@ibm.com" style="color:{c["interactive"]}">abdelrahman.maged@ibm.com</a><br>'
-        'Assurance Resolution Team</span>'
+        f'<span style="color:{c["text_secondary"]};font-size:{_font_size - 4}pt;">'
+        'Developed by Ehab Elrify · Adam Maged · Assurance Resolution Team</span>'
     )
-    footer.setFont(QFont('IBM Plex Sans', _font_size - 2))
+    footer.setFont(QFont('IBM Plex Sans', _font_size - 4))
     footer.setAlignment(Qt.AlignCenter)
     footer.setOpenExternalLinks(True)
     layout.addWidget(footer)

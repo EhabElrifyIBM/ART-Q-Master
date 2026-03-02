@@ -28,6 +28,23 @@ from PyQt5.QtGui import QFont, QColor
 from typing import Optional, Callable
 
 
+import sys
+import os
+
+# ---------------------------------------------------------------------------
+# IBM theme import (best-effort — works when run from ART Q Control dir)
+# ---------------------------------------------------------------------------
+def _get_qss_safe():
+    try:
+        _art_q_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'ART Q Control')
+        if _art_q_dir not in sys.path:
+            sys.path.insert(0, _art_q_dir)
+        from ibm_theme import get_qss, _read_font_size
+        return get_qss('light', _read_font_size())
+    except Exception:
+        return ""  # Fallback: no custom theme
+
+
 class ProcessState(Enum):
     """State machine for process control"""
     RUNNING = "running"
@@ -44,7 +61,7 @@ class ProgressSignals(QObject):
     Prevents "non-responding" window issues.
     """
     # Progress updates
-    progress_updated = pyqtSignal(int, str, int, int, int)  # current, case_num, completed, failed, total
+    progress_updated = pyqtSignal(int, str, int, int, int, int)  # current, case_num, completed, skipped, failed, total
     log_message_signal = pyqtSignal(str, str)  # message, level
     status_changed = pyqtSignal(str, bool)  # status_text, is_error
     finished = pyqtSignal(str)  # reason
@@ -78,58 +95,26 @@ class ProgressMonitor(QDialog):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setMinimumSize(900, 600)
-        self.resize(900, 650)
+        self.resize(950, 680)
         self.setModal(True)
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #f7f9fa;
-                border-radius: 16px;
-                font-family: 'Segoe UI', Arial, sans-serif;
-                font-size: 21px;
-            }
-            QLabel {
-                font-family: 'Segoe UI', Arial, sans-serif;
-                font-size: 21px;
-                font-weight: 600;
-                color: #222;
-            }
-            QPushButton {
-                background-color: #1976D2;
-                color: #fff;
-                font-weight: 600;
-                padding: 12px 28px;
-                border-radius: 8px;
-                font-size: 21px;
-                border: none;
-                transition: background 0.2s;
-            }
-            QPushButton:hover {
-                background-color: #1565C0;
-                color: #fff;
-            }
-            QPushButton:pressed {
-                background-color: #0D47A1;
-            }
-            QProgressBar {
-                border: 1px solid #b0bec5;
-                border-radius: 6px;
-                text-align: center;
-                height: 14px;
-                font-size: 18px;
-                background: #eceff1;
-            }
-            QProgressBar::chunk {
-                background-color: #43A047;
-                border-radius: 6px;
-            }
-            QFrame {
-                background: #fff;
-                border-radius: 10px;
-            }
-            QCheckBox {
-                font-size: 21px;
-            }
-        """)
+
+        # Apply IBM Carbon QSS (best-effort, falls back to empty string)
+        _qss = _get_qss_safe()
+        if _qss:
+            self.setStyleSheet(_qss)
+        else:
+            # Minimal fallback stylesheet
+            self.setStyleSheet("""
+                QDialog { background-color: #f4f4f4; font-family: 'Segoe UI', Arial; font-size: 13pt; }
+                QLabel { color: #161616; }
+                QPushButton { background-color: #0f62fe; color: #fff;
+                    border: none; border-radius: 4px;
+                    padding: 10px 20px; font-weight: 600; min-height: 40px; }
+                QPushButton:hover { background-color: #0353e9; }
+                QProgressBar { border: none; border-radius: 4px;
+                    background: #e0e0e0; height: 8px; }
+                QProgressBar::chunk { background: #0f62fe; border-radius: 4px; }
+            """)
         
         # State tracking
         self.state = ProcessState.RUNNING
@@ -363,9 +348,9 @@ class ProgressMonitor(QDialog):
     
     # ========== SIGNAL HANDLER METHODS (for thread-safe updates) ==========
     
-    def _on_progress_updated(self, current_case_num, case_number, completed, failed, total):
-        """Handle progress update signal from worker thread"""
-        self.update_progress(current_case_num, case_number, completed, failed, total)
+    def _on_progress_updated(self, current_case_num, case_number, completed, skipped, failed, total):
+        """Handle progress update signal from worker thread — relay all 6 args."""
+        self.update_progress(current_case_num, case_number, completed, skipped, failed, total)
     
     def _on_log_message(self, message, level):
         """Handle log message signal from worker thread"""

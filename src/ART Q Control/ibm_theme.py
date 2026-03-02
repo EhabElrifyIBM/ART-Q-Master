@@ -293,7 +293,6 @@ QPushButton {{
 }}
 QPushButton:hover {{
     background-color: {c['interactive_hover']};
-    cursor: pointer;
 }}
 QPushButton:pressed {{
     background-color: {c['interactive_active']};
