@@ -96,27 +96,28 @@ def run_q_control():
     q_control_dir = os.path.join(project_root, 'src', 'ART Q Control')
     if q_control_dir not in sys.path:
         sys.path.insert(0, q_control_dir)
-    
+
     # Also ensure src is in path
     src_dir = os.path.join(project_root, 'src')
     if src_dir not in sys.path:
         sys.path.append(src_dir)
 
     try:
-        # Use the new Dispatcher.py as entry point
-        dispatcher_script = os.path.join(q_control_dir, 'Dispatcher.py')
-        if os.path.exists(dispatcher_script):
-            runpy.run_path(dispatcher_script, run_name="__main__")
+        # ── v2 Dispatcher (IBM Carbon UI) — preferred entry point ──────────────
+        dispatcher_v2 = os.path.join(q_control_dir, 'Dispatcher_v2.py')
+        dispatcher_v1 = os.path.join(q_control_dir, 'Dispatcher.py')
+        main_script   = os.path.join(q_control_dir, 'Main.py')
+
+        if os.path.exists(dispatcher_v2):
+            runpy.run_path(dispatcher_v2, run_name="__main__")
+        elif os.path.exists(dispatcher_v1):
+            # Fallback: legacy Dispatcher
+            runpy.run_path(dispatcher_v1, run_name="__main__")
+        elif os.path.exists(main_script):
+            # Last resort: monolithic Main.py
+            runpy.run_path(main_script, run_name="__main__")
         else:
-            # Fallback to Main.py if Dispatcher doesn't exist
-            main_script = os.path.join(q_control_dir, 'Main.py')
-            if os.path.exists(main_script):
-                runpy.run_path(main_script, run_name="__main__")
-            else:
-                # Import Main from the ART Q Control directory
-                sys.path.insert(0, q_control_dir)
-                from Main import main
-                main()
+            raise FileNotFoundError("No ART Q Control entry point found.")
     except Exception as e:
         app = QApplication.instance() or QApplication(sys.argv)
         QMessageBox.critical(None, "Error", f"Failed to launch ART Q Control: {e}")
