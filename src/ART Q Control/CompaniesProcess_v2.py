@@ -98,34 +98,39 @@ def show_per_case_outcomes_dialog(email, cases):
     """
     outcomes = {}
     
+    from PyQt5.QtGui import QFont
+    from ibm_theme import get_qss, IBM, _read_font_size as _rfs3
+    _fs3 = _rfs3()
+    _c3 = IBM.LIGHT
+
     class PerCaseOutcomesDialog(QDialog, SettingsAwareMixin):
         def __init__(self):
             super().__init__()
             self.setup_settings_awareness()
             self.setWindowTitle("Company Call Results")
-            self.setMinimumWidth(550)
-            self.setMinimumHeight(400)
+            self.setMinimumWidth(560)
+            self.setMinimumHeight(420)
             self.combos = {}
-            
-            # ===== Phase 3.4: Keyboard Locking =====
-            # Prevent keyboard input while dialog is open
             self.setWindowModality(Qt.ApplicationModal)
-            
+            self.setStyleSheet(get_qss('light', _fs3))
+            self.setFont(QFont('IBM Plex Sans', _fs3))
+
             main_layout = QVBoxLayout(self)
-            main_layout.setContentsMargins(15, 15, 15, 15)
+            main_layout.setContentsMargins(24, 20, 24, 20)
             main_layout.setSpacing(12)
-            
+
             # Header
-            header = QLabel(f"📞 Call Results for: {email}")
-            header.setStyleSheet("font-weight: bold; color: #1976D2;")
+            header = QLabel(f"Call Results  —  {email}")
+            header.setFont(QFont('IBM Plex Sans', _fs3, QFont.Bold))
+            header.setStyleSheet(
+                f"font-weight: 700; color: {_c3['teal']}; background: transparent; border: none;"
+            )
             main_layout.addWidget(header)
             self.header = header
-            
-            # Apply current font size to all widgets after setup
-            self._apply_current_font_size()
-            
-            subtitle = QLabel(f"Select outcome for each case ({len(cases)} machines)")
-            subtitle.setStyleSheet("color: #666;")
+
+            subtitle = QLabel(f"Select outcome for each case  ({len(cases)} machines)")
+            subtitle.setFont(QFont('IBM Plex Sans', _fs3 - 1))
+            subtitle.setStyleSheet(f"color: {_c3['text_secondary']}; background: transparent; border: none;")
             main_layout.addWidget(subtitle)
             
             # Separator
@@ -157,33 +162,32 @@ def show_per_case_outcomes_dialog(email, cases):
             for case in cases:
                 case_num = case['case_number']
                 serial = case.get('serial', '') or case.get('mtm', '') or 'N/A'
-                
-                row_widget = QWidget()
+
+                row_widget = QFrame()
+                row_widget.setStyleSheet(
+                    f"QFrame {{ background-color: {_c3['layer_01']};"
+                    f" border: none;"
+                    f" border-bottom: 1px solid {_c3['border_subtle']};"
+                    f" border-radius: 0px; }}"
+                )
                 row_layout = QHBoxLayout(row_widget)
-                row_layout.setContentsMargins(5, 5, 5, 5)
-                
-                # Case info
+                row_layout.setContentsMargins(8, 10, 8, 10)
+
                 info_label = QLabel(f"Case {case_num}  |  {serial}")
-                info_label.setStyleSheet("font-weight: bold;")
-                info_label.setMinimumWidth(250)
+                info_label.setFont(QFont('IBM Plex Mono', _fs3 - 1, QFont.Bold))
+                info_label.setStyleSheet(
+                    f"font-weight: 700; color: {_c3['text_primary']};"
+                    f" background: transparent; border: none;"
+                )
+                info_label.setMinimumWidth(240)
                 row_layout.addWidget(info_label)
-                
-                # Outcome dropdown
+
                 combo = QComboBox()
                 combo.addItems(outcome_options)
-                combo.setCurrentIndex(0)  # Default to "Issue Resolved"
-                combo.setMinimumWidth(180)
-                combo.setStyleSheet("""
-                    QComboBox {
-                        padding: 5px;
-                        background: white;
-                        border: 1px solid #ccc;
-                        border-radius: 4px;
-                    }
-                    QComboBox:hover {
-                        border: 1px solid #1976D2;
-                    }
-                """)
+                combo.setCurrentIndex(0)
+                combo.setMinimumWidth(200)
+                combo.setFont(QFont('IBM Plex Sans', _fs3 - 1))
+                # IBM dropdown styled by the global QSS
                 row_layout.addWidget(combo)
                 
                 self.combos[case_num] = combo
@@ -193,54 +197,69 @@ def show_per_case_outcomes_dialog(email, cases):
             scroll.setWidget(scroll_widget)
             main_layout.addWidget(scroll)
             
-            # Quick actions
+            # Quick actions — IBM ghost buttons
             quick_layout = QHBoxLayout()
-            
-            set_all_resolved = QPushButton("✓ All Resolved")
-            set_all_resolved.setStyleSheet("background: #4CAF50; color: white; padding: 8px; border-radius: 4px;")
+            quick_layout.setSpacing(8)
+
+            _ghost_style = (
+                f"QPushButton {{ background-color: transparent; color: {_c3['text_secondary']};"
+                f" border: 1px solid {_c3['border_subtle']}; border-radius: 4px;"
+                f" font-family: 'IBM Plex Sans','Segoe UI',Arial; font-size: {_fs3 - 1}pt;"
+                f" padding: 6px 14px; min-height: 36px; }}"
+                f"QPushButton:hover {{ background-color: {_c3['layer_02']}; color: {_c3['text_primary']}; }}"
+            )
+
+            set_all_resolved = QPushButton("All Resolved")
+            set_all_resolved.setFont(QFont('IBM Plex Sans', _fs3 - 1))
+            set_all_resolved.setStyleSheet(_ghost_style)
             set_all_resolved.clicked.connect(lambda: self.set_all("Issue Resolved"))
             quick_layout.addWidget(set_all_resolved)
-            
-            set_all_not_reached = QPushButton("📞 All Not Reached")
-            set_all_not_reached.setStyleSheet("background: #FFC107; color: black; padding: 8px; border-radius: 4px;")
+
+            set_all_not_reached = QPushButton("All Not Reached")
+            set_all_not_reached.setFont(QFont('IBM Plex Sans', _fs3 - 1))
+            set_all_not_reached.setStyleSheet(_ghost_style)
             set_all_not_reached.clicked.connect(lambda: self.set_all("Customer Not Reached"))
             quick_layout.addWidget(set_all_not_reached)
-            
-            set_all_not_fixed = QPushButton("✗ All Not Fixed")
-            set_all_not_fixed.setStyleSheet("background: #FF5722; color: white; padding: 8px; border-radius: 4px;")
+
+            set_all_not_fixed = QPushButton("All Not Fixed")
+            set_all_not_fixed.setFont(QFont('IBM Plex Sans', _fs3 - 1))
+            set_all_not_fixed.setStyleSheet(_ghost_style)
             set_all_not_fixed.clicked.connect(lambda: self.set_all("Issue Not Fixed"))
             quick_layout.addWidget(set_all_not_fixed)
-            
+
             main_layout.addLayout(quick_layout)
             
-            # Buttons
+            # Action buttons
             btn_layout = QHBoxLayout()
-            
+            btn_layout.setSpacing(12)
+
             cancel_btn = QPushButton("Cancel")
-            cancel_btn.setStyleSheet("padding: 10px 25px;")
+            cancel_btn.setFont(QFont('IBM Plex Sans', _fs3))
+            cancel_btn.setStyleSheet(
+                f"QPushButton {{ background-color: transparent; color: {_c3['interactive']};"
+                f" font-weight: 600; padding: 10px 24px;"
+                f" border: 2px solid {_c3['interactive']}; border-radius: 4px;"
+                f" font-size: {_fs3}pt; min-height: 44px; }}"
+                f"QPushButton:hover {{ background-color: {_c3['layer_02']}; }}"
+            )
             cancel_btn.clicked.connect(self.reject)
             btn_layout.addWidget(cancel_btn)
-            
+
             btn_layout.addStretch()
-            
-            apply_btn = QPushButton("✓ Apply Results")
-            apply_btn.setStyleSheet("""
-                QPushButton {
-                    background: #1976D2; 
-                    color: white; 
-                    padding: 10px 30px; 
-                    font-weight: bold;
-                    border-radius: 5px;
-                }
-                QPushButton:hover {
-                    background: #1565C0;
-                }
-            """)
+
+            apply_btn = QPushButton("Apply Results")
+            apply_btn.setFont(QFont('IBM Plex Sans', _fs3, QFont.Bold))
+            apply_btn.setStyleSheet(
+                f"QPushButton {{ background-color: {_c3['teal']}; color: #ffffff;"
+                f" font-weight: 600; padding: 10px 30px;"
+                f" border: none; border-radius: 4px;"
+                f" font-size: {_fs3}pt; min-height: 44px; }}"
+                f"QPushButton:hover {{ background-color: {_c3['teal_hover']}; }}"
+            )
             apply_btn.clicked.connect(self.accept)
             btn_layout.addWidget(apply_btn)
-            
+
             main_layout.addLayout(btn_layout)
-            
             self.setLayout(main_layout)
         
         def set_all(self, outcome):
@@ -274,11 +293,13 @@ def show_per_case_outcomes_dialog(email, cases):
                 print(f"[DEBUG] Could not apply initial font size: {e}")
         
         def on_theme_changed(self, theme: str):
-            """Handle theme changes."""
-            if theme == 'dark':
-                self.header.setStyleSheet("font-weight: bold; color: #FFFFFF;")
-            else:
-                self.header.setStyleSheet("font-weight: bold; color: #1976D2;")
+            """Handle theme changes — applies full IBM QSS."""
+            from ibm_theme import get_qss, IBM
+            self.setStyleSheet(get_qss(theme, _fs3))
+            _tc3 = IBM.DARK if theme == 'dark' else IBM.LIGHT
+            self.header.setStyleSheet(
+                f"font-weight: 700; color: {_tc3['teal']}; background: transparent; border: none;"
+            )
         
         def on_font_size_changed(self, scale: float):
             """Handle font size changes."""

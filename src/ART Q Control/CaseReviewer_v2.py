@@ -160,123 +160,75 @@ def check_existing_cache_and_ask_enhanced(cache_path, mode_name="Case Reviewer")
     # Count remaining cases
     remaining_count, count_message = count_remaining_cases(cache_path)
     
+    from PyQt5.QtGui import QFont
+    from ibm_theme import get_qss, IBM, _read_font_size as _rfs
+    _fs = _rfs()
+    _c = IBM.LIGHT
+
     class EnhancedResumeDialog(QDialog):
         def __init__(self):
             super().__init__()
             self.setWindowTitle(f"Resume {mode_name}?")
-            self.setFixedSize(500, 240)
+            self.setFixedSize(500, 230)
             self.result = "NEW"
-            
-            layout = QVBoxLayout(self)
-            layout.setSpacing(15)
-            layout.setContentsMargins(20, 20, 20, 20)
+            self.setStyleSheet(get_qss('light', _fs))
+            self.setFont(QFont('IBM Plex Sans', _fs))
 
-            # --- Apply UI_DIALOG_THEME_REFERENCE.md styles ---
-            from PyQt5.QtGui import QFont
-            font = QFont('Segoe UI', 21)
-            self.setFont(font)
-            self.setStyleSheet("""
-                QDialog {
-                    background-color: #f7f9fa;
-                    border-radius: 16px;
-                    font-family: 'Segoe UI', Arial, sans-serif;
-                    font-size: 21px;
-                }
-                QLabel {
-                    font-family: 'Segoe UI', Arial, sans-serif;
-                    font-size: 21px;
-                    font-weight: 600;
-                    color: #222;
-                }
-                QPushButton {
-                    background-color: #1976D2;
-                    color: #fff;
-                    font-weight: 600;
-                    padding: 12px 28px;
-                    border-radius: 8px;
-                    font-size: 21px;
-                    border: none;
-                }
-                QPushButton:hover {
-                    background-color: #1565C0;
-                    color: #fff;
-                }
-                QPushButton:pressed {
-                    background-color: #0D47A1;
-                }
-                QProgressBar {
-                    border: 1px solid #b0bec5;
-                    border-radius: 6px;
-                    text-align: center;
-                    height: 14px;
-                    font-size: 18px;
-                    background: #eceff1;
-                }
-                QProgressBar::chunk {
-                    background-color: #43A047;
-                    border-radius: 6px;
-                }
-                QFrame {
-                    background: #fff;
-                    border-radius: 10px;
-                }
-                QCheckBox {
-                    font-size: 21px;
-                }
-            """)
-            
-            # Header message
-            header = QLabel(f"📋 Found existing work from today")
-            header.setFont(font)
-            header.setStyleSheet("font-weight: bold; color: #161616; font-size: 25px;")
+            layout = QVBoxLayout(self)
+            layout.setSpacing(16)
+            layout.setContentsMargins(24, 20, 24, 20)
+
+            header = QLabel("Existing session found")
+            header.setFont(QFont('IBM Plex Sans', _fs, QFont.Bold))
+            header.setStyleSheet(f"font-weight: 700; color: {_c['text_primary']}; background: transparent; border: none;")
             layout.addWidget(header)
-            
-            # Remaining cases info - PHASE 4.2 ENHANCEMENT
-            remaining_text = QLabel(f"✓ {count_message.capitalize()}\n\nWould you like to resume where you left off?")
-            remaining_text.setFont(font)
-            remaining_text.setStyleSheet("color: #393939; padding: 10px; background-color: #f4f4f4; border-radius: 5px; font-size: 25px;")
+
+            info_frame = QFrame()
+            info_frame.setStyleSheet(
+                f"background-color: {_c['info_bg']};"
+                f"border-left: 4px solid {_c['interactive']};"
+                f"border-top: 1px solid {_c['border_subtle']};"
+                f"border-right: 1px solid {_c['border_subtle']};"
+                f"border-bottom: 1px solid {_c['border_subtle']};"
+                f"border-radius: 0px; padding: 4px;"
+            )
+            info_layout_inner = QVBoxLayout(info_frame)
+            info_layout_inner.setContentsMargins(12, 8, 12, 8)
+            remaining_text = QLabel(f"{count_message.capitalize()}\n\nWould you like to resume where you left off?")
+            remaining_text.setFont(QFont('IBM Plex Sans', _fs))
+            remaining_text.setStyleSheet(f"color: {_c['text_primary']}; background: transparent; border: none;")
             remaining_text.setWordWrap(True)
-            layout.addWidget(remaining_text)
-            
-            # Buttons
+            info_layout_inner.addWidget(remaining_text)
+            layout.addWidget(info_frame)
+
             btn_layout = QHBoxLayout()
-            
-            resume_btn = QPushButton("✅ Resume")
-            resume_btn.setFont(font)
-            resume_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #0f62fe;
-                    color: white;
-                    font-weight: bold;
-                    padding: 18px 32px;
-                    border-radius: 8px;
-                    min-width: 120px;
-                    font-size: 25px;
-                }
-                QPushButton:hover { background-color: #0353e9; }
-            """)
+            btn_layout.setSpacing(12)
+
+            resume_btn = QPushButton("Resume")
+            resume_btn.setFont(QFont('IBM Plex Sans', _fs, QFont.Bold))
+            resume_btn.setStyleSheet(
+                f"QPushButton {{ background-color: {_c['interactive']}; color: #ffffff;"
+                f" font-weight: 600; padding: 12px 28px; border: none; border-radius: 4px;"
+                f" font-size: {_fs}pt; min-height: 44px; }}"
+                f"QPushButton:hover {{ background-color: {_c['interactive_hover']}; }}"
+            )
             resume_btn.clicked.connect(self.on_resume)
             btn_layout.addWidget(resume_btn)
-            
-            new_btn = QPushButton("🔄 Start Fresh")
-            new_btn.setFont(font)
-            new_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #e0e0e0;
-                    color: #161616;
-                    font-weight: bold;
-                    padding: 18px 32px;
-                    border-radius: 8px;
-                    min-width: 120px;
-                    font-size: 25px;
-                }
-                QPushButton:hover { background-color: #cacaca; }
-            """)
+
+            new_btn = QPushButton("Start Fresh")
+            new_btn.setFont(QFont('IBM Plex Sans', _fs))
+            new_btn.setStyleSheet(
+                f"QPushButton {{ background-color: transparent; color: {_c['interactive']};"
+                f" font-weight: 600; padding: 12px 28px;"
+                f" border: 2px solid {_c['interactive']}; border-radius: 4px;"
+                f" font-size: {_fs}pt; min-height: 44px; }}"
+                f"QPushButton:hover {{ background-color: {_c['layer_02']}; }}"
+            )
             new_btn.clicked.connect(self.on_new)
             btn_layout.addWidget(new_btn)
-            
+
             layout.addLayout(btn_layout)
-            layout.addStretch()
+            self.setLayout(layout)
         
         def on_resume(self):
             self.result = "RESUME"
@@ -314,73 +266,28 @@ def get_case_closing_code(case_number, cases_completed_count, total_in_progress_
     """
     # Dialog creation for case review
     
+    from ibm_theme import get_qss, IBM, _read_font_size as _rfs2
+    _fs2 = _rfs2()
+    _c2 = IBM.LIGHT
+
     class CaseReviewerDialog(QDialog, SettingsAwareMixin):
         def __init__(self, case_num, cases_completed, total_count, status, current_position=None):
             super().__init__()
-            # Store parameters as instance variables
             self.case_num = case_num
             self.cases_completed = cases_completed
             self.total_count = total_count
             self.case_status = status
-            self.current_position = current_position  # 1-based position for breadcrumb
-            
+            self.current_position = current_position
+
             from PyQt5.QtGui import QFont
-            font = QFont('Segoe UI', 21)
+            font = QFont('IBM Plex Sans', _fs2)
             self.setFont(font)
             self.setWindowTitle("Case Reviewer")
-            self.resize(600, 750)
+            self.resize(620, 780)
             self.selected_code = None
             self.add_note = False
             self.setModal(True)
-            self.setStyleSheet("""
-                QDialog {
-                    background-color: #f7f9fa;
-                    border-radius: 16px;
-                    font-family: 'Segoe UI', Arial, sans-serif;
-                    font-size: 21px;
-                }
-                QLabel {
-                    font-family: 'Segoe UI', Arial, sans-serif;
-                    font-size: 21px;
-                    font-weight: 600;
-                    color: #222;
-                }
-                QPushButton {
-                    background-color: #1976D2;
-                    color: #fff;
-                    font-weight: 600;
-                    padding: 12px 28px;
-                    border-radius: 8px;
-                    font-size: 21px;
-                    border: none;
-                }
-                QPushButton:hover {
-                    background-color: #1565C0;
-                    color: #fff;
-                }
-                QPushButton:pressed {
-                    background-color: #0D47A1;
-                }
-                QProgressBar {
-                    border: 1px solid #b0bec5;
-                    border-radius: 6px;
-                    text-align: center;
-                    height: 14px;
-                    font-size: 18px;
-                    background: #eceff1;
-                }
-                QProgressBar::chunk {
-                    background-color: #43A047;
-                    border-radius: 6px;
-                }
-                QFrame {
-                    background: #fff;
-                    border-radius: 10px;
-                }
-                QCheckBox {
-                    font-size: 21px;
-                }
-            """)
+            self.setStyleSheet(get_qss('light', _fs2))
             
             # Main layout
             main_layout = QVBoxLayout(self)
@@ -392,28 +299,31 @@ def get_case_closing_code(case_number, cases_completed_count, total_in_progress_
             info_layout.setSpacing(5)
             
             self.case_info_label = QLabel()
-            self.case_info_label.setFont(font)
-            self.case_info_label.setStyleSheet("font-weight: bold; color: #1976D2; font-size: 25px;")
+            self.case_info_label.setFont(QFont('IBM Plex Sans', _fs2, QFont.Bold))
+            self.case_info_label.setStyleSheet(
+                f"font-weight: 700; color: {_c2['interactive']}; background: transparent; border: none;"
+            )
             info_layout.addWidget(self.case_info_label)
-            
+
             self.progress_bar = QProgressBar()
             self.progress_bar.setMinimum(0)
             self.progress_bar.setMaximum(100)
-            self.progress_bar.setTextVisible(True)
-            self.progress_bar.setFont(font)
-            self.progress_bar.setStyleSheet("""
-                QProgressBar {
-                    border: 2px solid #CCCCCC;
-                    border-radius: 5px;
-                    text-align: center;
-                    height: 35px;
-                    font-size: 25px;
-                }
-                QProgressBar::chunk {
-                    background-color: #4CAF50;
-                }
-            """)
+            self.progress_bar.setTextVisible(False)
+            self.progress_bar.setFixedHeight(8)
+            self.progress_bar.setStyleSheet(
+                f"QProgressBar {{ border: none; border-radius: 4px;"
+                f" background-color: {_c2['progress_track']}; }}"
+                f"QProgressBar::chunk {{ background-color: {_c2['progress_fill']}; border-radius: 4px; }}"
+            )
             info_layout.addWidget(self.progress_bar)
+
+            # Case position label (below bar)
+            self.case_position_label = QLabel()
+            self.case_position_label.setFont(QFont('IBM Plex Sans', _fs2 - 2))
+            self.case_position_label.setStyleSheet(
+                f"color: {_c2['text_secondary']}; background: transparent; border: none;"
+            )
+            info_layout.addWidget(self.case_position_label)
             
             main_layout.addLayout(info_layout)
             main_layout.addSpacing(10)
@@ -503,28 +413,20 @@ def get_case_closing_code(case_number, cases_completed_count, total_in_progress_
             bottom_layout = QVBoxLayout()
             bottom_layout.setSpacing(10)
 
-            self.add_note_checkbox = QCheckBox("✓ Add Case Note")
-            self.add_note_checkbox.setStyleSheet("padding: 8px;")
+            from PyQt5.QtGui import QFont
+            self.add_note_checkbox = QCheckBox("Add Case Note")
+            self.add_note_checkbox.setFont(QFont('IBM Plex Sans', _fs2))
+            self.add_note_checkbox.setStyleSheet(f"padding: 6px; color: {_c2['text_primary']};")
             bottom_layout.addWidget(self.add_note_checkbox)
 
-            # Add a close/exit button
-            close_btn = QPushButton("⛔ Close & Exit Application")
-            close_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #D32F2F;
-                    color: white;
-                    border: 1px solid #B71C1C;
-                    border-radius: 4px;
-                    font-weight: bold;
-                    padding: 8px;
-                }
-                QPushButton:hover {
-                    background-color: #B71C1C;
-                }
-                QPushButton:pressed {
-                    background-color: #7B1FA2;
-                }
-            """)
+            close_btn = QPushButton("Close & Exit Application")
+            close_btn.setFont(QFont('IBM Plex Sans', _fs2))
+            close_btn.setStyleSheet(
+                f"QPushButton {{ background-color: {_c2['danger']}; color: #ffffff;"
+                f" border: none; border-radius: 4px; font-weight: 600;"
+                f" padding: 10px; min-height: 44px; }}"
+                f"QPushButton:hover {{ background-color: {_c2['danger_hover']}; }}"
+            )
             close_btn.clicked.connect(lambda: self.on_button_clicked("CLOSE_APPLICATION"))
             bottom_layout.addWidget(close_btn)
 
@@ -540,11 +442,13 @@ def get_case_closing_code(case_number, cases_completed_count, total_in_progress_
             self.accept()
         
         def on_theme_changed(self, theme: str):
-            """Handle theme changes."""
-            if theme == 'dark':
-                self.case_info_label.setStyleSheet("font-weight: bold; color: #4589ff;")
-            else:
-                self.case_info_label.setStyleSheet("font-weight: bold; color: #1976D2;")
+            """Handle theme changes — applies full IBM QSS."""
+            from ibm_theme import get_qss, IBM
+            self.setStyleSheet(get_qss(theme, _fs2))
+            _tc = IBM.DARK if theme == 'dark' else IBM.LIGHT
+            self.case_info_label.setStyleSheet(
+                f"font-weight: 700; color: {_tc['interactive']}; background: transparent; border: none;"
+            )
         
         def on_font_size_changed(self, scale: float):
             """Handle font size changes."""
@@ -572,54 +476,50 @@ def get_case_closing_code(case_number, cases_completed_count, total_in_progress_
                 print(f"[DEBUG] Could not apply initial font size: {e}")
         
         def _create_section_header(self, title):
-            """Create a section header label with visible styling"""
-            header = QLabel(f"▼ {title}")
-            header.setStyleSheet("""
-                font-weight: bold;
-                color: white;
-                background-color: #1976D2;
-                padding: 10px 12px;
-                border-radius: 4px;
-                margin-top: 5px;
-            """)
+            """IBM Carbon section header: bold label with blue bottom border"""
+            from PyQt5.QtGui import QFont
+            header = QLabel(title.upper())
+            header.setFont(QFont('IBM Plex Sans', _fs2 - 2, QFont.Bold))
+            header.setStyleSheet(
+                f"font-weight: 700; color: {_c2['text_secondary']};"
+                f" background: transparent; border: none;"
+                f" border-bottom: 2px solid {_c2['interactive']};"
+                f" padding-bottom: 4px; margin-top: 6px;"
+                f" letter-spacing: 0.5px;"
+            )
             return header
-        
+
         def _create_button(self, label_text, code, bg_color):
-            """Create a styled button"""
+            """IBM Carbon action button — layer card style with left border on hover"""
+            from PyQt5.QtGui import QFont
             btn = QPushButton(label_text)
-            btn.setMinimumHeight(40)
-            btn.setMaximumWidth(220)
-            btn.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: {bg_color};
-                    border: 1px solid #CCCCCC;
-                    border-radius: 4px;
-                    font-weight: bold;
-                    color: #333;
-                    padding: 8px 12px;
-                }}
-                QPushButton:hover {{
-                    border: 2px solid #1976D2;
-                    background-color: {bg_color};
-                }}
-                QPushButton:pressed {{
-                    background-color: #90CAF9;
-                }}
-            """)
+            btn.setFont(QFont('IBM Plex Sans', _fs2))
+            btn.setMinimumHeight(44)
+            btn.setStyleSheet(
+                f"QPushButton {{ background-color: {_c2['layer_01']};"
+                f" border: 1px solid {_c2['border_subtle']}; border-radius: 4px;"
+                f" font-weight: 500; color: {_c2['text_primary']};"
+                f" padding: 10px 12px; text-align: left; }}"
+                f"QPushButton:hover {{ background-color: {_c2['layer_02']};"
+                f" border-left: 3px solid {_c2['interactive']}; color: {_c2['interactive']}; }}"
+                f"QPushButton:pressed {{ background-color: {_c2['layer_03']}; }}"
+            )
             btn.clicked.connect(lambda: self.on_button_clicked(code))
             return btn
         
         def update_case_info(self, case_num, cases_completed, total_count, current_position=None):
-            """Update the case info and progress bar, showing only case number and status above the bar."""
+            """Update the case info and progress bar."""
             try:
                 status_display = self.case_status.title() if self.case_status else "Unknown"
-                self.case_info_label.setText(f"Case: {case_num}  |  Status: {status_display}")
+                self.case_info_label.setText(f"Case {case_num}  —  {status_display}")
                 if total_count and total_count > 0:
                     percentage = int(((cases_completed + 1) / total_count) * 100)
                     self.progress_bar.setValue(percentage)
-                    self.progress_bar.setFormat(f"{cases_completed + 1}/{total_count} ({percentage}%)")
+                    pos = current_position if current_position else cases_completed + 1
+                    self.case_position_label.setText(f"{pos} of {total_count} cases ({percentage}%)")
                 else:
                     self.progress_bar.setValue(0)
+                    self.case_position_label.setText("")
             except Exception as e:
                 print(f"[WARN] Error updating case info: {e}")
         

@@ -27,6 +27,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
+from ibm_theme import get_qss, get_mode_card_style, IBM, _read_font_size
 
 # Import shared functions for configuration
 from SharedFunctions import (
@@ -96,353 +97,168 @@ def show_mode_selector():
         app = QApplication(sys.argv)
     
     # ===== SETTINGS AWARENESS: Create settings-aware dialog =====
+    # Detect current theme
+    try:
+        import json as _json
+        _theme_cfg = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'theme_config.json')
+        _current_theme = 'light'
+        if os.path.exists(_theme_cfg):
+            with open(_theme_cfg, 'r') as _f:
+                _current_theme = _json.load(_f).get('theme', 'light')
+        if _current_theme == 'auto':
+            try:
+                import winreg
+                _key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                    r'Software\Microsoft\Windows\CurrentVersion\Themes\Personalize')
+                _val, _ = winreg.QueryValueEx(_key, 'AppsUseLightTheme')
+                _current_theme = 'light' if _val else 'dark'
+            except Exception:
+                _current_theme = 'light'
+    except Exception:
+        _current_theme = 'light'
+
+    _font_size = _read_font_size()
+
     class ModeSelectionDialog(QDialog):
         def __init__(self):
             super().__init__()
-            # --- Apply Functions.py hard-coded styles ---
-            self.setStyleSheet("""
-                QDialog {
-                    background-color: #f7f9fa;
-                    border-radius: 16px;
-                    font-family: 'Segoe UI', Arial, sans-serif;
-                    font-size: 21px;
-                }
-                QLabel {
-                    font-family: 'Segoe UI', Arial, sans-serif;
-                    font-size: 21px;
-                    font-weight: 600;
-                    color: #222;
-                }
-                QPushButton {
-                    background-color: #1976D2;
-                    color: #fff;
-                    font-weight: 600;
-                    padding: 12px 28px;
-                    border-radius: 8px;
-                    font-size: 21px;
-                    border: none;
-                }
-                QPushButton:hover {
-                    background-color: #1565C0;
-                    color: #fff;
-                }
-                QPushButton:pressed {
-                    background-color: #0D47A1;
-                }
-                QProgressBar {
-                    border: 1px solid #b0bec5;
-                    border-radius: 6px;
-                    text-align: center;
-                    height: 14px;
-                    font-size: 18px;
-                    background: #eceff1;
-                }
-                QProgressBar::chunk {
-                    background-color: #43A047;
-                    border-radius: 6px;
-                }
-                QFrame {
-                    background: #fff;
-                    border-radius: 10px;
-                }
-                QCheckBox {
-                    font-size: 21px;
-                }
-            """)
-            from PyQt5.QtGui import QFont
-            font = QFont('Segoe UI', 21)
+            self._theme = _current_theme
+            self._apply_theme(self._theme)
+            font = QFont('IBM Plex Sans', _font_size)
             self.setFont(font)
-        
-        def _apply_current_font_size(self):
-            """Apply current font size from config to all widgets."""
-            try:
-                import json
-                import os
-                config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config.json')
-                font_size = 22  # default (updated from 15)
-                
-                if os.path.exists(config_path):
-                    with open(config_path, 'r') as f:
-                        config = json.load(f)
-                    if 'ui_settings' in config and 'font_size' in config['ui_settings']:
-                        font_size = max(10, min(40, int(config['ui_settings']['font_size'])))  # Updated range to 10-40
-                
-            except Exception as e:
-                print(f"[DEBUG] Could not apply initial font size: {e}")
-        
+
+        def _apply_theme(self, theme: str):
+            self._theme = theme
+            self.setStyleSheet(get_qss(theme, _font_size))
+
         def on_theme_changed(self, theme: str):
-            """Handle theme changes."""
-            if theme == 'dark':
-                self.setStyleSheet("""
-                    QDialog {
-                        background-color: #1E1E1E;
-                    }
-                    QLabel {
-                        color: #FFFFFF;
-                    }
-                    QPushButton {
-                        color: #FFFFFF;
-                    }
-                """)
-            else:
-                self.setStyleSheet("""
-                    QDialog {
-                        background-color: #FAFAFA;
-                    }
-                    QLabel {
-                        color: #161616;
-                    }
-                    QPushButton {
-                        color: #333;
-                    }
-                """)
-        
+            """Handle theme changes — now actually applies the new QSS."""
+            self._apply_theme(theme)
+
         def on_font_size_changed(self, scale: float):
-            """Handle font size changes."""
-            # Import and use the static helper
-    
+            pass  # Font is set at dialog creation from config
+
     dialog = ModeSelectionDialog()
-    from PyQt5.QtGui import QFont
-    font = QFont('Arial', 25)
-    dialog.setWindowTitle("ART Q Control - Mode Selector")
-    dialog.setMinimumSize(750, 850)
-    dialog.resize(750, 850)
+    font = QFont('IBM Plex Sans', _font_size)
+    dialog.setWindowTitle("ART Q Control — Mode Selector")
+    dialog.setMinimumSize(700, 820)
+    dialog.resize(700, 820)
     dialog.setFont(font)
     
     layout = QVBoxLayout()
-    layout.setContentsMargins(30, 30, 30, 30)
-    layout.setSpacing(20)
-    
+    layout.setContentsMargins(32, 28, 32, 24)
+    layout.setSpacing(16)
+
     # ========== TITLE ==========
-    title = QLabel("=== ART AUTOMATION SYSTEM ===")
+    c = IBM.DARK if _current_theme == 'dark' else IBM.LIGHT
+    title = QLabel("ART AUTOMATION SYSTEM")
     title.setAlignment(Qt.AlignCenter)
-    title.setFont(font)
-    title.setStyleSheet("""
-        font-weight: bold;
-        color: #1976D2;
-        padding: 10px;
-        font-size: 25px;
-    """)
+    title.setFont(QFont('IBM Plex Sans', _font_size + 4, QFont.Bold))
+    title.setStyleSheet(f"font-weight: 700; color: {c['interactive']}; padding: 8px; letter-spacing: 1px;")
     layout.addWidget(title)
-    
-    # ========== CONFIGURATION INFO ==========
+
+    # ========== CONFIGURATION INFO CARD ==========
     config_frame = QFrame()
-    config_frame.setStyleSheet("""
-        QFrame {
-            background-color: #FFFFFF;
-            border: 1px solid #E0E0E0;
-            border-radius: 8px;
-        }
-    """)
+    config_frame.setProperty('role', 'card-blue')
+    config_frame.setStyleSheet(
+        f"background-color: {c['layer_01']};"
+        f"border-left: 4px solid {c['interactive']};"
+        f"border-top: 1px solid {c['border_subtle']};"
+        f"border-right: 1px solid {c['border_subtle']};"
+        f"border-bottom: 1px solid {c['border_subtle']};"
+        f"border-radius: 0px;"
+    )
     config_layout = QVBoxLayout(config_frame)
-    config_layout.setContentsMargins(20, 15, 20, 15)
-    
-    config_title = QLabel("Current Configuration:")
-    config_title.setFont(font)
-    config_title.setStyleSheet("font-weight: bold; color: #333; font-size: 25px;")
+    config_layout.setContentsMargins(16, 12, 16, 12)
+    config_layout.setSpacing(4)
+
+    config_title = QLabel("Current Configuration")
+    config_title.setFont(QFont('IBM Plex Sans', _font_size - 1, QFont.Bold))
+    config_title.setStyleSheet(f"font-weight: 700; color: {c['text_secondary']}; text-transform: uppercase; letter-spacing: 0.5px; background: transparent; border: none;")
     config_layout.addWidget(config_title)
-    
+
     config_info = QLabel(
-        f"<table cellpadding='5'>"
-        f"<tr><td><b>Agent Name:</b></td><td>{AGENT_NAME}</td></tr>"
+        f"<table cellpadding='3'>"
+        f"<tr><td><b>Agent:</b></td><td>{AGENT_NAME}</td></tr>"
         f"<tr><td><b>User ID:</b></td><td>{DIALER_USERNAME}</td></tr>"
-        f"<tr><td><b>Excel Base Path:</b></td><td>{EXCEL_BASE_PATH}</td></tr>"
-        f"<tr><td><b>Cache Directory:</b></td><td>{CACHE_DIRECTORY}</td></tr>"
-        f"<tr><td><b>Sheet Name:</b></td><td>{EXCEL_SHEET_NAME}</td></tr>"
+        f"<tr><td><b>Excel Path:</b></td><td>{EXCEL_BASE_PATH}</td></tr>"
+        f"<tr><td><b>Cache Dir:</b></td><td>{CACHE_DIRECTORY}</td></tr>"
+        f"<tr><td><b>Sheet:</b></td><td>{EXCEL_SHEET_NAME}</td></tr>"
         f"</table>"
     )
-    config_info.setFont(font)
-    config_info.setStyleSheet("color: #555; font-size: 25px;")
+    config_info.setFont(QFont('IBM Plex Sans', _font_size - 1))
+    config_info.setStyleSheet(f"color: {c['text_secondary']}; background: transparent; border: none;")
     config_layout.addWidget(config_info)
-    
     layout.addWidget(config_frame)
-    
-    # ========== AUTO SENDER BUTTON ==========
-    auto_sender_frame = QFrame()
-    auto_sender_frame.setStyleSheet("""
-        QFrame {
-            background-color: #E8F5E9;
-            border: 2px solid #4CAF50;
-            border-radius: 10px;
-        }
-        QFrame:hover {
-            background-color: #C8E6C9;
-        }
-    """)
-    auto_sender_layout = QVBoxLayout(auto_sender_frame)
-    auto_sender_layout.setContentsMargins(20, 15, 20, 15)
-    
-    auto_sender_btn = QPushButton("🚀 AUTO SENDER")
-    auto_sender_btn.setFont(font)
-    auto_sender_btn.setStyleSheet("""
-        QPushButton {
-            background-color: #4CAF50;
-            color: white;
-            font-weight: bold;
-            padding: 18px;
-            border-radius: 8px;
-            border: none;
-            font-size: 25px;
-        }
-        QPushButton:hover {
-            background-color: #43A047;
-        }
-        QPushButton:pressed {
-            background-color: #388E3C;
-        }
-    """)
+
+    # ========== MODE BUTTONS — IBM Accent Cards ==========
+    # Auto Sender — IBM Blue
+    auto_sender_btn = QPushButton("  Auto Sender\n  Process new cases  ·  SMS + Email + Note")
+    auto_sender_btn.setFont(QFont('IBM Plex Sans', _font_size, QFont.Bold))
+    auto_sender_btn.setStyleSheet(get_mode_card_style(c['interactive'], c['interactive_hover'], _current_theme))
     auto_sender_btn.clicked.connect(lambda: dialog.done(1))
-    auto_sender_layout.addWidget(auto_sender_btn)
-    
-    layout.addWidget(auto_sender_frame)
-    
-    # ========== CASE REVIEWER BUTTON ==========
-    case_reviewer_frame = QFrame()
-    case_reviewer_frame.setStyleSheet("""
-        QFrame {
-            background-color: #E3F2FD;
-            border: 2px solid #1976D2;
-            border-radius: 10px;
-        }
-        QFrame:hover {
-            background-color: #BBDEFB;
-        }
-    """)
-    case_reviewer_layout = QVBoxLayout(case_reviewer_frame)
-    case_reviewer_layout.setContentsMargins(20, 15, 20, 15)
-    
-    case_reviewer_btn = QPushButton("📞 CASE REVIEWER")
-    case_reviewer_btn.setFont(font)
-    case_reviewer_btn.setStyleSheet("""
-        QPushButton {
-            background-color: #1976D2;
-            color: white;
-            font-weight: bold;
-            padding: 18px;
-            border-radius: 8px;
-            border: none;
-            font-size: 25px;
-        }
-        QPushButton:hover {
-            background-color: #1565C0;
-        }
-        QPushButton:pressed {
-            background-color: #0D47A1;
-        }
-    """)
+    layout.addWidget(auto_sender_btn)
+
+    # Case Reviewer — IBM Purple
+    case_reviewer_btn = QPushButton("  Case Reviewer\n  Review in-progress cases  ·  With Dialer")
+    case_reviewer_btn.setFont(QFont('IBM Plex Sans', _font_size, QFont.Bold))
+    case_reviewer_btn.setStyleSheet(get_mode_card_style(c['purple'], c['purple_hover'], _current_theme))
     case_reviewer_btn.clicked.connect(lambda: dialog.done(2))
-    case_reviewer_layout.addWidget(case_reviewer_btn)
-    
-    layout.addWidget(case_reviewer_frame)
-    
-    # ========== COMPANY PROCESS BUTTON (NEW - Phase 5.1) ==========
-    company_process_frame = QFrame()
-    company_process_frame.setStyleSheet("""
-        QFrame {
-            background-color: #FCE4EC;
-            border: 2px solid #C2185B;
-            border-radius: 10px;
-        }
-        QFrame:hover {
-            background-color: #F8BBD0;
-        }
-    """)
-    company_process_layout = QVBoxLayout(company_process_frame)
-    company_process_layout.setContentsMargins(20, 15, 20, 15)
-    
-    company_process_btn = QPushButton("🏢 COMPANY PROCESS")
-    company_process_btn.setFont(font)
-    company_process_btn.setStyleSheet("""
-        QPushButton {
-            background-color: #C2185B;
-            color: white;
-            font-weight: bold;
-            padding: 18px;
-            border-radius: 8px;
-            border: none;
-            font-size: 25px;
-        }
-        QPushButton:hover {
-            background-color: #A01647;
-        }
-        QPushButton:pressed {
-            background-color: #880E4F;
-        }
-    """)
+    layout.addWidget(case_reviewer_btn)
+
+    # Company Process — IBM Teal
+    company_process_btn = QPushButton("  Company Process\n  Batch process grouped company cases")
+    company_process_btn.setFont(QFont('IBM Plex Sans', _font_size, QFont.Bold))
+    company_process_btn.setStyleSheet(get_mode_card_style(c['teal'], c['teal_hover'], _current_theme))
     company_process_btn.clicked.connect(lambda: dialog.done(5))
-    company_process_layout.addWidget(company_process_btn)
-    
-    layout.addWidget(company_process_frame)
-    
-    # ========== BOTTOM BUTTONS ==========
+    layout.addWidget(company_process_btn)
+
+    # ========== BOTTOM GHOST BUTTONS ==========
     bottom_layout = QHBoxLayout()
-    bottom_layout.setSpacing(15)
-    
-    # Phase 5.4: Settings button for UI customization
-    # Settings button removed as requested
-    
-    update_btn = QPushButton("⚙ Update Configuration")
-    update_btn.setFont(font)
-    update_btn.setStyleSheet("""
-        QPushButton {
-            background-color: #FF9800;
-            color: white;
-            font-weight: bold;
-            padding: 12px 20px;
-            border-radius: 6px;
-            border: none;
-            font-size: 25px;
-        }
-        QPushButton:hover {
-            background-color: #FB8C00;
-        }
-        QPushButton:pressed {
-            background-color: #F57C00;
-        }
-    """)
+    bottom_layout.setSpacing(12)
+
+    update_btn = QPushButton("Update Configuration")
+    update_btn.setFont(QFont('IBM Plex Sans', _font_size))
+    update_btn.setProperty('role', 'ghost')
+    update_btn.setStyleSheet(
+        f"QPushButton {{ background-color: transparent; color: {c['text_secondary']};"
+        f" border: 1px solid {c['border_subtle']}; border-radius: 4px;"
+        f" font-family: 'IBM Plex Sans', 'Segoe UI', Arial; font-size: {_font_size}pt;"
+        f" padding: 10px 18px; min-height: 40px; }}"
+        f"QPushButton:hover {{ background-color: {c['layer_02']}; color: {c['text_primary']}; }}"
+    )
     update_btn.clicked.connect(lambda: dialog.done(3))
     bottom_layout.addWidget(update_btn)
-    
-    main_menu_btn = QPushButton("☰ Main Menu")
-    main_menu_btn.setFont(font)
-    main_menu_btn.setStyleSheet("""
-        QPushButton {
-            background-color: #607D8B;
-            color: white;
-            font-weight: bold;
-            padding: 12px 20px;
-            border-radius: 6px;
-            border: none;
-            font-size: 25px;
-        }
-        QPushButton:hover {
-            background-color: #546E7A;
-        }
-        QPushButton:pressed {
-            background-color: #455A64;
-        }
-    """)
+
+    main_menu_btn = QPushButton("Main Menu")
+    main_menu_btn.setFont(QFont('IBM Plex Sans', _font_size))
+    main_menu_btn.setStyleSheet(
+        f"QPushButton {{ background-color: transparent; color: {c['text_secondary']};"
+        f" border: 1px solid {c['border_subtle']}; border-radius: 4px;"
+        f" font-family: 'IBM Plex Sans', 'Segoe UI', Arial; font-size: {_font_size}pt;"
+        f" padding: 10px 18px; min-height: 40px; }}"
+        f"QPushButton:hover {{ background-color: {c['layer_02']}; color: {c['text_primary']}; }}"
+    )
     main_menu_btn.clicked.connect(lambda: dialog.done(4))
     bottom_layout.addWidget(main_menu_btn)
-    
+
     layout.addLayout(bottom_layout)
-    layout.addStretch()
-    
+
     # ========== SUPPORT MODE CHECKBOX ==========
-    support_checkbox = QCheckBox("🤝 Supporting another agent")
-    support_checkbox.setFont(font)
-    support_checkbox.setStyleSheet("padding: 8px; color: #161616; font-size: 25px;")
+    support_checkbox = QCheckBox("Supporting another agent")
+    support_checkbox.setFont(QFont('IBM Plex Sans', _font_size))
+    support_checkbox.setStyleSheet(f"padding: 6px; color: {c['text_primary']};")
     layout.addWidget(support_checkbox)
-    
+
     # ========== FOOTER ==========
     footer = QLabel(
-        '<span style="color:#666;">'
+        f'<span style="color:{c["text_secondary"]};font-size:{_font_size - 2}pt;">'
         'Developed by: Ehab Elrify | Adam Maged<br>'
-        'Email: <a href="mailto:ehab.elrify@ibm.com" style="color:#1976D2;">ehab.elrify@ibm.com</a> | '
-        '<a href="mailto:abdelrahman.maged@ibm.com" style="color:#1976D2;">abdelrahman.maged@ibm.com</a><br>'
+        f'<a href="mailto:ehab.elrify@ibm.com" style="color:{c["interactive"]}">ehab.elrify@ibm.com</a> | '
+        f'<a href="mailto:abdelrahman.maged@ibm.com" style="color:{c["interactive"]}">abdelrahman.maged@ibm.com</a><br>'
         'Assurance Resolution Team</span>'
     )
-    footer.setFont(font)
+    footer.setFont(QFont('IBM Plex Sans', _font_size - 2))
     footer.setAlignment(Qt.AlignCenter)
     footer.setOpenExternalLinks(True)
     layout.addWidget(footer)

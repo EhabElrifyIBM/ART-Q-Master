@@ -522,132 +522,89 @@ def check_existing_cache_and_ask_enhanced(cache_path, mode_name="Auto Sender"):
     
     from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
     from PyQt5.QtCore import Qt
+    from PyQt5.QtGui import QFont
+    from ibm_theme import get_qss, IBM, _read_font_size
+
+    _fs = _read_font_size()
+    _c = IBM.LIGHT  # Resume dialog always light (modal over a light background)
+
     class EnhancedResumeDialog(QDialog):
         def __init__(self):
             super().__init__()
             self.setWindowTitle(f"Resume {mode_name}?")
-            self.setFixedSize(500, 240)
+            self.setFixedSize(500, 230)
             self.result = "NEW"
-            
-            layout = QVBoxLayout(self)
-            layout.setSpacing(15)
-            layout.setContentsMargins(20, 20, 20, 20)
-
-            # --- Apply UI_DIALOG_THEME_REFERENCE.md styles ---
-            from PyQt5.QtGui import QFont
-            font = QFont('Arial', 25)
+            self.setStyleSheet(get_qss('light', _fs))
+            font = QFont('IBM Plex Sans', _fs)
             self.setFont(font)
-            self.setStyleSheet("""
-                QDialog {
-                    background-color: #FAFAFA;
-                    font-family: Arial;
-                    font-size: 25px;
-                }
-                QLabel {
-                    font-family: Arial;
-                    font-size: 25px;
-                    font-weight: bold;
-                    color: #161616;
-                }
-                QPushButton {
-                    background-color: #0f62fe;
-                    color: white;
-                    font-weight: bold;
-                    padding: 18px 32px;
-                    border-radius: 8px;
-                    font-size: 25px;
-                }
-                QPushButton:hover {
-                    background-color: #0353e9;
-                }
-                QProgressBar {
-                    border: 2px solid #CCCCCC;
-                    border-radius: 5px;
-                    text-align: center;
-                    height: 35px;
-                    font-size: 25px;
-                }
-                QProgressBar::chunk {
-                    background-color: #4CAF50;
-                }
-            """)
-            
-            # Header message
-            header = QLabel(f"📋 Found existing work from today")
-            header.setFont(font)
-            header.setStyleSheet("font-weight: bold; color: #161616; font-size: 25px;")
+
+            layout = QVBoxLayout(self)
+            layout.setSpacing(16)
+            layout.setContentsMargins(24, 20, 24, 20)
+
+            # Header
+            header = QLabel("Existing session found")
+            header.setFont(QFont('IBM Plex Sans', _fs, QFont.Bold))
+            header.setStyleSheet(f"font-weight: 700; color: {_c['text_primary']}; background: transparent; border: none;")
             layout.addWidget(header)
-            self.header = header
-            
-            # Remaining cases info - PHASE 4.2 ENHANCEMENT
-            remaining_text = QLabel(f"✓ {count_message.capitalize()}\n\nWould you like to resume where you left off?")
-            remaining_text.setFont(font)
-            remaining_text.setStyleSheet("color: #393939; padding: 10px; background-color: #f4f4f4; border-radius: 5px; font-size: 25px;")
+
+            # Info box — IBM info card style
+            info_frame = QFrame()
+            info_frame.setStyleSheet(
+                f"background-color: {_c['info_bg']};"
+                f"border-left: 4px solid {_c['interactive']};"
+                f"border-top: 1px solid {_c['border_subtle']};"
+                f"border-right: 1px solid {_c['border_subtle']};"
+                f"border-bottom: 1px solid {_c['border_subtle']};"
+                f"border-radius: 0px; padding: 4px;"
+            )
+            info_layout = QVBoxLayout(info_frame)
+            info_layout.setContentsMargins(12, 8, 12, 8)
+            remaining_text = QLabel(f"{count_message.capitalize()}\n\nWould you like to resume where you left off?")
+            remaining_text.setFont(QFont('IBM Plex Sans', _fs))
+            remaining_text.setStyleSheet(f"color: {_c['text_primary']}; background: transparent; border: none;")
             remaining_text.setWordWrap(True)
-            layout.addWidget(remaining_text)
-            
+            info_layout.addWidget(remaining_text)
+            layout.addWidget(info_frame)
+
             # Buttons
             btn_layout = QHBoxLayout()
-            
-            resume_btn = QPushButton("✅ Resume")
-            resume_btn.setFont(font)
-            resume_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #0f62fe;
-                    color: white;
-                    font-weight: bold;
-                    padding: 18px 32px;
-                    border-radius: 8px;
-                    min-width: 120px;
-                    font-size: 25px;
-                }
-                QPushButton:hover { background-color: #0353e9; }
-            """)
+            btn_layout.setSpacing(12)
+
+            resume_btn = QPushButton("Resume")
+            resume_btn.setFont(QFont('IBM Plex Sans', _fs, QFont.Bold))
+            resume_btn.setStyleSheet(
+                f"QPushButton {{ background-color: {_c['interactive']}; color: #ffffff;"
+                f" font-weight: 600; padding: 12px 28px; border: none; border-radius: 4px;"
+                f" font-family: 'IBM Plex Sans','Segoe UI',Arial; font-size: {_fs}pt; min-height: 44px; }}"
+                f"QPushButton:hover {{ background-color: {_c['interactive_hover']}; }}"
+                f"QPushButton:pressed {{ background-color: {_c['interactive_active']}; }}"
+            )
             resume_btn.clicked.connect(self.on_resume)
             btn_layout.addWidget(resume_btn)
-            
-            new_btn = QPushButton("🔄 Start Fresh")
-            new_btn.setFont(font)
-            new_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #e0e0e0;
-                    color: #161616;
-                    font-weight: bold;
-                    padding: 18px 32px;
-                    border-radius: 8px;
-                    min-width: 120px;
-                    font-size: 25px;
-                }
-                QPushButton:hover { background-color: #cacaca; }
-            """)
+
+            new_btn = QPushButton("Start Fresh")
+            new_btn.setFont(QFont('IBM Plex Sans', _fs))
+            new_btn.setStyleSheet(
+                f"QPushButton {{ background-color: transparent; color: {_c['interactive']};"
+                f" font-weight: 600; padding: 12px 28px;"
+                f" border: 2px solid {_c['interactive']}; border-radius: 4px;"
+                f" font-family: 'IBM Plex Sans','Segoe UI',Arial; font-size: {_fs}pt; min-height: 44px; }}"
+                f"QPushButton:hover {{ background-color: {_c['layer_02']}; }}"
+            )
             new_btn.clicked.connect(self.on_new)
             btn_layout.addWidget(new_btn)
-            
+
             layout.addLayout(btn_layout)
-            layout.addStretch()
-            layout.addStretch()
-            
             self.setLayout(layout)
-            
-            # Apply current font size to all widgets after layout is complete
-            self._apply_current_font_size()
-        
+
         def on_resume(self):
             self.result = "RESUME"
             self.accept()
-        
+
         def on_new(self):
             self.result = "NEW"
             self.accept()
-        
-        def on_theme_changed(self, theme: str):
-            pass  # Theme change listener removed for static theme
-        
-        def on_font_size_changed(self, scale: float):
-            pass  # Font size change listener removed for static theme
-        
-        def _apply_current_font_size(self):
-            pass  # Dynamic font size removed for static theme
     
     app = QApplication.instance()
     if app is None:
