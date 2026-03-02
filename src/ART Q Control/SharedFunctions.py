@@ -1528,16 +1528,24 @@ def load_companies_for_handler(cache_file, handler_name, sheet_name="Companies")
             print("[WARN] Companies sheet missing required columns")
             return {}, df
         
-        # Process ALL cases in Companies sheet (filtering was already done when cache was created)
-        # This ensures the process proceeds even if Assigned To format differs
+        # Only process cases that still have Status = 'new'
+        # This is the key filter for resume support: closed/skipped cases are skipped automatically.
         df_handler = df.copy()
         
-        # Group by email
+        # Group by email — only include rows whose status is still 'new'
         grouped = {}
         for idx, row in df_handler.iterrows():
             email = str(row.get(email_col, '')).strip().lower()
             if not email or email == 'nan':
                 continue
+            
+            # ── RESUME FILTER: skip already-processed rows ──────────────────
+            if status_col:
+                row_status = str(row.get(status_col, '')).strip().lower()
+                if row_status != 'new':
+                    print(f"[INFO] Skipping case {str(row.get(case_col, '')).strip()} (status: {row_status})")
+                    continue
+            # ───────────────────────────────────────────────────────────────
             
             case_num = str(row.get(case_col, '')).strip()
             serial = str(row.get(serial_col, '')).strip() if serial_col else ''
