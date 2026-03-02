@@ -84,6 +84,161 @@ from CaseReviewer_v2 import get_call_closing_code
 # CRM URL for navigation
 CRM_URL = "https://lenovo-plrs-prod.crm5.dynamics.com/main.aspx?appid=00fd771a-9081-e911-a83a-000d3a07fba2&forceUCI=1&pagetype=dashboard&id=4e76815a-1f63-df11-ae90-00155d2e3002&type=system&_canOverride=true"
 
+# ============================================================================
+# RESUME HELPERS - Companies Process
+# ============================================================================
+
+def count_remaining_companies(cache_file, sheet_name="Companies"):
+    """
+    Count how many NEW company cases remain in the cache file.
+    Returns (remaining_count, display_message).
+    """
+    try:
+        if not os.path.exists(cache_file):
+            return 0, "Cache file not found"
+
+        import pandas as _pd
+        df_c = _pd.read_excel(cache_file, sheet_name=sheet_name)
+
+        from SharedFunctions import find_column_case_insensitive as _fci
+        status_col = _fci(df_c, 'Status')
+        if status_col:
+            remaining = len(df_c[
+                df_c[status_col].astype(str).str.strip().str.lower() == 'new'
+            ])
+        else:
+            remaining = len(df_c)
+
+        if remaining == 0:
+            return 0, "No NEW company cases remain in cache"
+        elif remaining == 1:
+            return 1, "1 NEW company case remains"
+        else:
+            return remaining, f"{remaining} NEW company cases remain"
+    except Exception as e:
+        print(f"[WARN] count_remaining_companies: {e}")
+        return 0, "Unable to determine remaining cases"
+
+
+def check_companies_cache_and_ask(cache_path):
+    """
+    If a previous companies cache exists, ask the user whether to resume or
+    start fresh.  Returns "RESUME" or "NEW".
+    """
+    if not os.path.exists(cache_path):
+        return "NEW"
+
+    remaining, msg = count_remaining_companies(cache_path)
+
+    from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
+    from PyQt5.QtCore import Qt
+    from PyQt5.QtGui import QFont
+    try:
+        from ibm_theme import get_qss, IBM, _read_font_size
+        _fs = _read_font_size()
+        _c  = IBM.LIGHT
+        _qss = get_qss('light', _fs)
+    except Exception:
+        _fs = 13
+        _c  = {
+            'bg': '#f4f4f4', 'layer_01': '#ffffff', 'layer_02': '#f4f4f4',
+            'text_primary': '#161616', 'text_secondary': '#525252',
+            'interactive': '#0f62fe', 'interactive_hover': '#0353e9',
+            'interactive_active': '#002d9c', 'border_subtle': '#e0e0e0',
+            'info_bg': '#edf5ff', 'teal': '#005d5d', 'layer_03': '#e0e0e0',
+        }
+        _qss = ''
+
+    class CompaniesResumeDialog(QDialog):
+        def __init__(self):
+            super().__init__()
+            self.setWindowTitle("Resume Companies Process?")
+            self.setFixedSize(500, 230)
+            self.result = "NEW"
+            if _qss:
+                self.setStyleSheet(_qss)
+            self.setFont(QFont('IBM Plex Sans', _fs))
+
+            layout = QVBoxLayout(self)
+            layout.setSpacing(16)
+            layout.setContentsMargins(24, 20, 24, 20)
+
+            header = QLabel("Existing session found")
+            header.setFont(QFont('IBM Plex Sans', _fs, QFont.Bold))
+            header.setStyleSheet(
+                f"font-weight: 700; color: {_c['text_primary']};"
+                f" background: transparent; border: none;"
+            )
+            layout.addWidget(header)
+
+            info_frame = QFrame()
+            info_frame.setStyleSheet(
+                f"background-color: {_c.get('info_bg', '#edf5ff')};"
+                f"border-left: 4px solid {_c['interactive']};"
+                f"border-top: 1px solid {_c['border_subtle']};"
+                f"border-right: 1px solid {_c['border_subtle']};"
+                f"border-bottom: 1px solid {_c['border_subtle']};"
+                f"border-radius: 0px; padding: 4px;"
+            )
+            info_lyt = QVBoxLayout(info_frame)
+            info_lyt.setContentsMargins(12, 8, 12, 8)
+            info_lbl = QLabel(
+                f"{msg.capitalize()}\n\nWould you like to resume where you left off?"
+            )
+            info_lbl.setFont(QFont('IBM Plex Sans', _fs))
+            info_lbl.setStyleSheet(
+                f"color: {_c['text_primary']}; background: transparent; border: none;"
+            )
+            info_lbl.setWordWrap(True)
+            info_lyt.addWidget(info_lbl)
+            layout.addWidget(info_frame)
+
+            btn_layout = QHBoxLayout()
+            btn_layout.setSpacing(12)
+
+            resume_btn = QPushButton("Resume")
+            resume_btn.setFont(QFont('IBM Plex Sans', _fs, QFont.Bold))
+            resume_btn.setStyleSheet(
+                f"QPushButton {{ background-color: {_c['interactive']}; color: #ffffff;"
+                f" font-weight: 600; padding: 12px 28px; border: none; border-radius: 4px;"
+                f" font-family: 'IBM Plex Sans','Segoe UI',Arial; font-size: {_fs}pt; min-height: 44px; }}"
+                f"QPushButton:hover {{ background-color: {_c['interactive_hover']}; }}"
+                f"QPushButton:pressed {{ background-color: {_c.get('interactive_active', '#002d9c')}; }}"
+            )
+            resume_btn.clicked.connect(self.on_resume)
+            btn_layout.addWidget(resume_btn)
+
+            new_btn = QPushButton("Start Fresh")
+            new_btn.setFont(QFont('IBM Plex Sans', _fs))
+            new_btn.setStyleSheet(
+                f"QPushButton {{ background-color: transparent; color: {_c['interactive']};"
+                f" font-weight: 600; padding: 12px 28px;"
+                f" border: 2px solid {_c['interactive']}; border-radius: 4px;"
+                f" font-family: 'IBM Plex Sans','Segoe UI',Arial; font-size: {_fs}pt; min-height: 44px; }}"
+                f"QPushButton:hover {{ background-color: {_c.get('layer_02', '#f4f4f4')}; }}"
+            )
+            new_btn.clicked.connect(self.on_new)
+            btn_layout.addWidget(new_btn)
+
+            layout.addLayout(btn_layout)
+            self.setLayout(layout)
+
+        def on_resume(self):
+            self.result = "RESUME"
+            self.accept()
+
+        def on_new(self):
+            self.result = "NEW"
+            self.accept()
+
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication(sys.argv)
+
+    dlg = CompaniesResumeDialog()
+    dlg.exec_()
+    return dlg.result
+
 def show_per_case_outcomes_dialog(email, cases, batch_index=1, total_batches=1):
     """
     Shows a dialog allowing the user to set individual outcomes for each case in a company batch.
@@ -120,42 +275,6 @@ def show_per_case_outcomes_dialog(email, cases, batch_index=1, total_batches=1):
             main_layout.setContentsMargins(24, 20, 24, 20)
             main_layout.setSpacing(12)
 
-            # ========== TOP: Batch Progress Indicator ==========
-            batches_remaining = total_batches - batch_index
-
-            batch_bar_frame = QFrame()
-            batch_bar_frame.setStyleSheet(
-                f"background-color: {_c3['layer_01']};"
-                f"border-left: 4px solid {_c3['teal']};"
-                f"border-top: 1px solid {_c3['border_subtle']};"
-                f"border-right: 1px solid {_c3['border_subtle']};"
-                f"border-bottom: 1px solid {_c3['border_subtle']};"
-            )
-            batch_bar_lyt = QVBoxLayout(batch_bar_frame)
-            batch_bar_lyt.setContentsMargins(14, 10, 14, 10)
-            batch_bar_lyt.setSpacing(6)
-
-            progress_lbl = QLabel(
-                f"<b>Batch {batch_index} of {total_batches}</b>  ·  "
-                f"{len(cases)} case{'s' if len(cases) != 1 else ''} in this batch  ·  "
-                f"<b>{batches_remaining} batch{'es' if batches_remaining != 1 else ''} remaining</b>"
-            )
-            progress_lbl.setFont(QFont('IBM Plex Sans', _fs3 - 1))
-            progress_lbl.setStyleSheet(f"color: {_c3['text_primary']}; background: transparent; border: none;")
-            batch_bar_lyt.addWidget(progress_lbl)
-
-            batch_bar = QProgressBar()
-            batch_bar.setMinimum(0)
-            batch_bar.setMaximum(total_batches)
-            batch_bar.setValue(batch_index)
-            batch_bar.setTextVisible(False)
-            batch_bar.setFixedHeight(6)
-            batch_bar.setStyleSheet(
-                f"QProgressBar {{ border: none; border-radius: 3px; background: {_c3['progress_track']}; }}"
-                f"QProgressBar::chunk {{ background: {_c3['teal']}; border-radius: 3px; }}"
-            )
-            batch_bar_lyt.addWidget(batch_bar)
-            main_layout.addWidget(batch_bar_frame)
 
             # Header
             header = QLabel(f"Call Results  —  {email}")
@@ -235,33 +354,51 @@ def show_per_case_outcomes_dialog(email, cases, batch_index=1, total_batches=1):
             scroll.setWidget(scroll_widget)
             main_layout.addWidget(scroll)
             
-            # Quick actions — IBM ghost buttons
-            quick_layout = QHBoxLayout()
-            quick_layout.setSpacing(8)
-
-            _ghost_style = (
-                f"QPushButton {{ background-color: transparent; color: {_c3['text_secondary']};"
-                f" border: 1px solid {_c3['border_subtle']}; border-radius: 4px;"
-                f" font-family: 'IBM Plex Sans','Segoe UI',Arial; font-size: {_fs3 - 1}pt;"
-                f" padding: 6px 14px; min-height: 36px; }}"
-                f"QPushButton:hover {{ background-color: {_c3['layer_02']}; color: {_c3['text_primary']}; }}"
+            # Quick-set buttons — clearly styled solid pills
+            quick_label = QLabel("Quick-set all outcomes:")
+            quick_label.setFont(QFont('IBM Plex Sans', _fs3 - 1))
+            quick_label.setStyleSheet(
+                f"color: {_c3['text_secondary']}; background: transparent; border: none;"
             )
+            main_layout.addWidget(quick_label)
 
-            set_all_resolved = QPushButton("All Resolved")
-            set_all_resolved.setFont(QFont('IBM Plex Sans', _fs3 - 1))
-            set_all_resolved.setStyleSheet(_ghost_style)
+            quick_layout = QHBoxLayout()
+            quick_layout.setSpacing(10)
+
+            def _pill(label, color, hover, text_color="#ffffff"):
+                btn = QPushButton(label)
+                btn.setFont(QFont('IBM Plex Sans', _fs3 - 1, QFont.Bold))
+                btn.setStyleSheet(
+                    f"QPushButton {{ background-color: {color}; color: {text_color};"
+                    f" border: none; border-radius: 20px;"
+                    f" font-family: 'IBM Plex Sans','Segoe UI',Arial; font-size: {_fs3 - 1}pt;"
+                    f" font-weight: 600; padding: 8px 18px; min-height: 38px; }}"
+                    f"QPushButton:hover {{ background-color: {hover}; }}"
+                    f"QPushButton:pressed {{ opacity: 0.85; }}"
+                )
+                return btn
+
+            set_all_resolved = _pill(
+                "✔  All Resolved",
+                _c3.get('success', '#198038'),
+                _c3.get('success_hover', '#0e6027')
+            )
             set_all_resolved.clicked.connect(lambda: self.set_all("Issue Resolved"))
             quick_layout.addWidget(set_all_resolved)
 
-            set_all_not_reached = QPushButton("All Not Reached")
-            set_all_not_reached.setFont(QFont('IBM Plex Sans', _fs3 - 1))
-            set_all_not_reached.setStyleSheet(_ghost_style)
+            set_all_not_reached = _pill(
+                "📞  All Not Reached",
+                _c3.get('teal', '#005d5d'),
+                _c3.get('teal_hover', '#004144')
+            )
             set_all_not_reached.clicked.connect(lambda: self.set_all("Customer Not Reached"))
             quick_layout.addWidget(set_all_not_reached)
 
-            set_all_not_fixed = QPushButton("All Not Fixed")
-            set_all_not_fixed.setFont(QFont('IBM Plex Sans', _fs3 - 1))
-            set_all_not_fixed.setStyleSheet(_ghost_style)
+            set_all_not_fixed = _pill(
+                "✖  All Not Fixed",
+                _c3.get('danger', '#da1e28'),
+                _c3.get('danger_hover', '#a2191f')
+            )
             set_all_not_fixed.clicked.connect(lambda: self.set_all("Issue Not Fixed"))
             quick_layout.addWidget(set_all_not_fixed)
 
@@ -842,6 +979,52 @@ def run_companies_process_standalone(support_agent=None):
                 return
         else:
             print(f"[INFO] ✓ Companies cache already exists: {cache_file}")
+            # ── Resume dialog
+            resume_choice = check_companies_cache_and_ask(cache_file)
+            if resume_choice == "NEW":
+                print("[INFO] User chose to start fresh — deleting old cache")
+                try:
+                    os.remove(cache_file)
+                except Exception as _re:
+                    print(f"[WARN] Could not remove old cache: {_re}")
+                # Rebuild cache from Excel (re-run the creation branch)
+                from SharedFunctions import (
+                    todays_excel_path as _tep,
+                    find_column_case_insensitive as _fcib,
+                )
+                _excel = _tep()
+                try:
+                    with pd.ExcelFile(_excel) as _xls:
+                        _comp_sheet = None
+                        for _s in _xls.sheet_names:
+                            if 'companies' in str(_s).lower():
+                                _comp_sheet = _s
+                                break
+                        if _comp_sheet:
+                            _df = pd.read_excel(_excel, sheet_name=_comp_sheet)
+                            _ac = _fcib(_df, 'Assigned To')
+                            if _ac:
+                                _hn = working_agent.split()[0]
+                                _df = _df[_df[_ac].astype(str).str.strip() == _hn].copy()
+                            _sc = _fcib(_df, 'Status')
+                            if _sc:
+                                _df = _df[_df[_sc].astype(str).str.strip().str.lower() == 'new'].copy()
+                            if len(_df) > 0:
+                                with pd.ExcelWriter(cache_file, engine='openpyxl') as _w:
+                                    _df.to_excel(_w, sheet_name='Companies', index=False)
+                                print(f"[INFO] ✓ Fresh cache created with {len(_df)} cases")
+                            else:
+                                print("[INFO] No NEW Companies cases found — nothing to do")
+                                return
+                        else:
+                            print("[INFO] No Companies sheet found — cannot rebuild cache")
+                            return
+                except Exception as _ce:
+                    print(f"[ERROR] Could not rebuild Companies cache: {_ce}")
+                    traceback.print_exc()
+                    return
+            else:
+                print("[INFO] Resuming previous Companies session")
         
         # ===== Now that cache is ready, initialize Chrome driver =====
         print("[INFO] Initializing Chrome driver...")
