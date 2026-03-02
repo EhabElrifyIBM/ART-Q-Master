@@ -1643,59 +1643,122 @@ def build_companies_email_body(cases_info, agent_name):
     return email_body
 
 
-def show_companies_email_confirmation(email, cases_info, email_body):
-    """Show email preview with confirmation - must confirm to proceed"""
-    
+def show_companies_email_confirmation(email, cases_info, email_body, cases_left=0, email_groups_left=0):
+    """Show email preview with confirmation - IBM Carbon Design"""
+
     class EmailConfirmDialog(QDialog):
         def __init__(self):
             super().__init__()
-            self.setWindowTitle("Confirm Email - Companies Batch")
-            self.setFixedSize(600, 500)
+            self.setWindowTitle("Confirm Email  —  Company Batch")
+            self.setMinimumWidth(580)
+            self.resize(640, 580)
             self.confirmed = False
-            
+
+            # ── IBM tokens ──────────────────────────────────────────────────
+            try:
+                from ibm_theme import IBM, get_qss, _read_font_size
+                _c = IBM.LIGHT
+                _fs = _read_font_size()
+                self.setStyleSheet(get_qss('light', _fs))
+            except Exception:
+                _c = {
+                    'bg': '#f4f4f4', 'layer_01': '#ffffff', 'layer_02': '#f4f4f4',
+                    'text_primary': '#161616', 'text_secondary': '#525252',
+                    'text_on_color': '#ffffff', 'interactive': '#0f62fe',
+                    'interactive_hover': '#0353e9', 'border_subtle': '#e0e0e0',
+                    'teal': '#005d5d', 'teal_hover': '#004144',
+                    'success': '#198038', 'danger': '#da1e28',
+                    'disabled_bg': '#c6c6c6', 'text_disabled': '#a8a8a8',
+                }
+                _fs = 13
+
+            from PyQt5.QtGui import QFont
+            self.setFont(QFont('IBM Plex Sans', _fs))
+
             layout = QVBoxLayout(self)
-            
-            # Header
-            header = QLabel(f"📧 Sending Email to: {email}")
-            header.setStyleSheet("font-size: 15px; font-weight: bold; color: #0f62fe;")
-            layout.addWidget(header)
-            
-            # Cases list
-            cases_label = QLabel(f"Cases in this batch: {len(cases_info)}")
-            cases_label.setStyleSheet("font-size: 15px; color: #525252;")
-            layout.addWidget(cases_label)
-            
-            # Email preview
+            layout.setContentsMargins(24, 20, 24, 20)
+            layout.setSpacing(12)
+
+            # ── COUNTER CARD: cases left + groups left ───────────────────────
+            counter_frame = QFrame()
+            counter_frame.setStyleSheet(
+                f"QFrame {{ background: {_c['layer_01']};"
+                f" border-left: 4px solid {_c['teal']};"
+                f" border-top: 1px solid {_c['border_subtle']};"
+                f" border-right: 1px solid {_c['border_subtle']};"
+                f" border-bottom: 1px solid {_c['border_subtle']}; }}"
+            )
+            counter_lyt = QHBoxLayout(counter_frame)
+            counter_lyt.setContentsMargins(14, 10, 14, 10)
+            counter_lyt.setSpacing(24)
+
+            def _kv(label, val, color):
+                col = QVBoxLayout()
+                col.setSpacing(1)
+                l = QLabel(label.upper())
+                l.setFont(QFont('IBM Plex Sans', _fs - 4, QFont.Bold))
+                l.setStyleSheet(f"color: {_c['text_secondary']}; letter-spacing: 1px; background: transparent; border: none;")
+                v = QLabel(str(val))
+                v.setFont(QFont('IBM Plex Sans', _fs + 4, QFont.Bold))
+                v.setStyleSheet(f"color: {color}; font-weight: 800; background: transparent; border: none;")
+                col.addWidget(l)
+                col.addWidget(v)
+                return col
+
+            counter_lyt.addLayout(_kv("Cases Left",  cases_left,       _c['interactive']))
+            counter_lyt.addLayout(_kv("Email Groups Left", email_groups_left, _c['teal']))
+            counter_lyt.addLayout(_kv("This Batch",  len(cases_info),  _c['text_secondary']))
+            counter_lyt.addStretch()
+            layout.addWidget(counter_frame)
+
+            # ── EMAIL HEADER ─────────────────────────────────────────────────
+            hdr = QLabel(f"Sending to:  {email}")
+            hdr.setFont(QFont('IBM Plex Sans', _fs, QFont.Bold))
+            hdr.setStyleSheet(
+                f"font-weight: 700; color: {_c['interactive']};"
+                f" background: transparent; border: none;"
+            )
+            layout.addWidget(hdr)
+
+            # ── EMAIL BODY PREVIEW ────────────────────────────────────────────
             preview = QTextEdit()
             preview.setPlainText(email_body)
             preview.setReadOnly(True)
-            preview.setStyleSheet("font-size: 15px; background: #f4f4f4;")
+            preview.setFont(QFont('IBM Plex Mono', _fs - 2))
+            preview.setStyleSheet(
+                f"QTextEdit {{ background: {_c['layer_02']};"
+                f" border: 1px solid {_c['border_subtle']};"
+                f" border-radius: 4px;"
+                f" font-family: 'IBM Plex Mono','Courier New',monospace;"
+                f" font-size: {_fs - 2}pt;"
+                f" color: {_c['text_primary']};"
+                f" padding: 8px; }}"
+            )
             layout.addWidget(preview)
-            
-            # Confirm button only (no cancel option per user request)
-            confirm_btn = QPushButton("✅ Confirm and Send Email")
-            confirm_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #24a148;
-                    color: white;
-                    border-radius: 5px;
-                    padding: 12px 24px;
-                    font-size: 15px;
-                    font-weight: bold;
-                }
-                QPushButton:hover { background-color: #1c8a3c; }
-            """)
+
+            # ── CONFIRM BUTTON ────────────────────────────────────────────────
+            confirm_btn = QPushButton("I Understood  —  Confirm and Send Email")
+            confirm_btn.setFont(QFont('IBM Plex Sans', _fs, QFont.Bold))
+            confirm_btn.setMinimumHeight(48)
+            confirm_btn.setStyleSheet(
+                f"QPushButton {{ background-color: {_c['interactive']};"
+                f" color: #ffffff; border: none; border-radius: 8px;"
+                f" font-weight: 700; font-size: {_fs}pt;"
+                f" padding: 12px 28px; letter-spacing: 0.3px; }}"
+                f"QPushButton:hover {{ background-color: {_c['interactive_hover']}; }}"
+                f"QPushButton:pressed {{ background-color: #002d9c; }}"
+            )
             confirm_btn.clicked.connect(self.on_confirm)
             layout.addWidget(confirm_btn)
-        
+
         def on_confirm(self):
             self.confirmed = True
             self.accept()
-    
+
     app = QApplication.instance()
     if app is None:
         app = QApplication(sys.argv)
-    
+
     dialog = EmailConfirmDialog()
     dialog.exec_()
     return dialog.confirmed

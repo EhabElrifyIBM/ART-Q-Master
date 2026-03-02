@@ -93,9 +93,9 @@ class ProgressMonitor(QDialog):
     
     def __init__(self, title="Processing Cases", total_cases=0, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(title)
-        self.setMinimumSize(900, 600)
-        self.resize(950, 680)
+        self.setWindowTitle("ART Q Master - AutoSender")
+        self.setMinimumWidth(700)
+        self.resize(780, 820)
         self.setModal(True)
 
         # Apply IBM Carbon QSS (best-effort, falls back to empty string)

@@ -141,8 +141,8 @@ def show_mode_selector():
     dialog = ModeSelectionDialog()
     font = QFont('IBM Plex Sans', _font_size)
     dialog.setWindowTitle("ART Q Control")
-    dialog.setMinimumWidth(560)
-    dialog.resize(640, 880)
+    dialog.setMinimumWidth(600)
+    dialog.resize(700, 880)
     dialog.setFont(font)
     
     # Root layout
@@ -219,7 +219,7 @@ def show_mode_selector():
         btn = QPushButton()
         btn.setText(f"{label}\n{sub_label}")
         btn.setFont(QFont('IBM Plex Sans', _font_size + 1, QFont.Bold))
-        btn.setMinimumHeight(100)
+        btn.setMinimumHeight(72)
         btn.setCursor(Qt.PointingHandCursor)
         btn.setStyleSheet(
             f"QPushButton {{"
