@@ -285,11 +285,12 @@ QPushButton {{
     font-family: {ff};
     font-size: {fs}pt;
     font-weight: 600;
-    padding: 12px 24px;
+    padding: 12px 28px;
     border: none;
-    border-radius: 4px;
+    border-radius: 8px;
     min-height: 44px;
     outline: none;
+    letter-spacing: 0.2px;
 }}
 QPushButton:hover {{
     background-color: {c['interactive_hover']};
@@ -308,6 +309,7 @@ QPushButton[role="secondary"] {{
     color: {c['interactive']};
     border: 2px solid {c['interactive']};
     font-weight: 600;
+    border-radius: 8px;
 }}
 QPushButton[role="secondary"]:hover {{
     background-color: {c['layer_02']};
@@ -322,6 +324,7 @@ QPushButton[role="ghost"] {{
     color: {c['text_secondary']};
     border: 1px solid {c['border_subtle']};
     font-weight: 500;
+    border-radius: 8px;
 }}
 QPushButton[role="ghost"]:hover {{
     background-color: {c['layer_02']};
@@ -364,16 +367,17 @@ QPushButton[role="teal"]:hover {{
 /* ---- Progress bar ------------------------------------------------- */
 QProgressBar {{
     border: none;
-    border-radius: 4px;
+    border-radius: 6px;
     background-color: {c['progress_track']};
     height: 8px;
     text-align: center;
     font-size: {fs_sm}pt;
-    color: transparent;
+    font-weight: 700;
+    color: #ffffff;
 }}
 QProgressBar::chunk {{
     background-color: {c['progress_fill']};
-    border-radius: 4px;
+    border-radius: 6px;
 }}
 QProgressBar[state="success"]::chunk {{
     background-color: {c['progress_success']};

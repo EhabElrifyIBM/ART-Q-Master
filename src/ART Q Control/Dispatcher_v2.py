@@ -141,7 +141,8 @@ def show_mode_selector():
     dialog = ModeSelectionDialog()
     font = QFont('IBM Plex Sans', _font_size)
     dialog.setWindowTitle("ART Q Control")
-    dialog.resize(620, 760)
+    dialog.setMinimumWidth(560)
+    dialog.resize(640, 880)
     dialog.setFont(font)
     
     # Root layout
@@ -218,31 +219,31 @@ def show_mode_selector():
         btn = QPushButton()
         btn.setText(f"{label}\n{sub_label}")
         btn.setFont(QFont('IBM Plex Sans', _font_size + 1, QFont.Bold))
-        btn.setMinimumHeight(96)
+        btn.setMinimumHeight(100)
         btn.setCursor(Qt.PointingHandCursor)
         btn.setStyleSheet(
             f"QPushButton {{"
             f"  background-color: {bg};"
             f"  color: #ffffff;"
             f"  border: none;"
-            f"  border-radius: 6px;"
+            f"  border-radius: 10px;"
             f"  font-family: 'IBM Plex Sans','Segoe UI',Arial;"
-            f"  font-size: {_font_size + 1}pt;"
+            f"  font-size: {_font_size + 2}pt;"
             f"  font-weight: 700;"
             f"  padding: 20px 24px;"
             f"  text-align: center;"
+            f"  letter-spacing: 0.3px;"
             f"}}"
             f"QPushButton:hover {{"
             f"  background-color: {hover_bg};"
-            f"  border-left: 6px solid rgba(255,255,255,0.4);"
             f"}}"
-            f"QPushButton:pressed {{ opacity: 0.85; }}"
+            f"QPushButton:pressed {{ filter: brightness(0.9); }}"
         )
         return btn
 
     auto_sender_btn = _mode_btn(
         "Auto Sender",
-        "Process new cases  ·  SMS + Email + Case Note",
+        "",
         c['interactive'], c['interactive_hover']
     )
     auto_sender_btn.clicked.connect(lambda: dialog.done(1))
@@ -251,7 +252,7 @@ def show_mode_selector():
 
     case_reviewer_btn = _mode_btn(
         "Case Reviewer",
-        "Review in-progress cases  ·  With Dialer",
+        "",
         c['purple'], c['purple_hover']
     )
     case_reviewer_btn.clicked.connect(lambda: dialog.done(2))
@@ -260,7 +261,7 @@ def show_mode_selector():
 
     company_process_btn = _mode_btn(
         "Company Process",
-        "Batch process grouped company cases",
+        "",
         c['teal'], c['teal_hover']
     )
     company_process_btn.clicked.connect(lambda: dialog.done(5))

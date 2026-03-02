@@ -203,12 +203,12 @@ class ProgressMonitor(QDialog):
         self.progress_bar.setFont(QFont('IBM Plex Sans', _fs - 2, QFont.Bold))
         self.progress_bar.setMinimumHeight(28)
         self.progress_bar.setStyleSheet(
-            f"QProgressBar {{ border: none; border-radius: 4px;"
+            f"QProgressBar {{ border: none; border-radius: 8px;"
             f" background: {_c['progress_track']};"
-            f" color: {_c['text_primary']}; text-align: center;"
-            f" font-weight: 600; }}"
+            f" color: #ffffff; text-align: center;"
+            f" font-weight: 700; }}"
             f"QProgressBar::chunk {{ background: {_c['interactive']};"
-            f" border-radius: 4px; }}"
+            f" border-radius: 8px; }}"
         )
         main.addWidget(self.progress_bar)
         main.addSpacing(12)
@@ -275,7 +275,8 @@ class ProgressMonitor(QDialog):
             _btn_base +
             f"QPushButton {{ background-color: transparent;"
             f" color: {_c['interactive']};"
-            f" border: 2px solid {_c['interactive']}; }}"
+            f" border: 2px solid {_c['interactive']};"
+            f" border-radius: 8px; }}"
             f"QPushButton:hover {{ background-color: {_c['interactive']};"
             f" color: #ffffff; }}"
             f"QPushButton:disabled {{ border-color: {_c['disabled_bg']};"
@@ -292,7 +293,7 @@ class ProgressMonitor(QDialog):
         self.resume_btn.setStyleSheet(
             _btn_base +
             f"QPushButton {{ background-color: {_c['interactive']};"
-            f" color: #ffffff; }}"
+            f" color: #ffffff; border-radius: 8px; }}"
             f"QPushButton:hover {{ background-color: {_c['interactive_hover']}; }}"
             f"QPushButton:disabled {{ background-color: {_c['disabled_bg']};"
             f" color: {_c['text_disabled']}; }}"
@@ -308,7 +309,8 @@ class ProgressMonitor(QDialog):
             _btn_base +
             f"QPushButton {{ background-color: transparent;"
             f" color: {_c['text_secondary']};"
-            f" border: 2px solid {_c['border_subtle']}; }}"
+            f" border: 2px solid {_c['border_subtle']};"
+            f" border-radius: 8px; }}"
             f"QPushButton:hover {{ background-color: {_c['layer_02']};"
             f" color: {_c['text_primary']};"
             f" border-color: {_c['text_secondary']}; }}"
@@ -325,7 +327,7 @@ class ProgressMonitor(QDialog):
         self.abort_btn.setStyleSheet(
             _btn_base +
             f"QPushButton {{ background-color: {_c['danger']};"
-            f" color: #ffffff; }}"
+            f" color: #ffffff; border-radius: 8px; }}"
             f"QPushButton:hover {{ background-color: {_c['danger_hover']}; }}"
             f"QPushButton:disabled {{ background-color: {_c['disabled_bg']};"
             f" color: {_c['text_disabled']}; }}"
@@ -343,7 +345,7 @@ class ProgressMonitor(QDialog):
         self.finish_btn.setStyleSheet(
             _btn_base +
             f"QPushButton {{ background-color: {_c['interactive']};"
-            f" color: #ffffff; }}"
+            f" color: #ffffff; border-radius: 8px; }}"
             f"QPushButton:hover {{ background-color: {_c['interactive_hover']}; }}"
             f"QPushButton:disabled {{ background-color: {_c['disabled_bg']};"
             f" color: {_c['text_disabled']}; }}"
