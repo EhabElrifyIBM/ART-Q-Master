@@ -435,8 +435,10 @@ def run_companies_process(driver, cache_file, agent_name, sheet_name="Companies"
     print(f"[INFO] Found {len(grouped)} distinct companies (emails) to process")
     
     today_str = datetime.now().strftime("%b %d, %Y")
-    
-    for email, data in grouped.items():
+    total_groups = len(grouped)
+    all_emails = list(grouped.keys())
+
+    for batch_index, (email, data) in enumerate(grouped.items(), start=1):
         cases = data['cases']
         
         print(f"\n[INFO] ========== Processing Company Email: {email} ({len(cases)} cases) ==========")
@@ -448,6 +450,14 @@ def run_companies_process(driver, cache_file, agent_name, sheet_name="Companies"
             # Extract company metadata from first case (now has company_name and state_province)
             first_case_row = cases[0]
             
+            # Compute progress figures
+            cases_processed_so_far = sum(
+                len(grouped[e]['cases']) for e in all_emails[:batch_index - 1]
+            )
+            total_cases_all = sum(len(grouped[e]['cases']) for e in all_emails)
+            cases_left = total_cases_all - cases_processed_so_far
+            groups_left = total_groups - batch_index  # groups AFTER this one
+
             company_metadata = {
                 'company_name': first_case_row.get('company_name', 'Unknown Company'),
                 'email': email,
@@ -455,9 +465,13 @@ def run_companies_process(driver, cache_file, agent_name, sheet_name="Companies"
                 'state_province': first_case_row.get('state_province', ''),
                 'case_count': len(cases),
                 'cases': cases,
-                'font_settings': font_settings  # Use cached font settings to prevent garbage collection issues
+                'font_settings': font_settings,
+                'batch_index': batch_index,
+                'total_groups': total_groups,
+                'cases_left': cases_left,
+                'groups_left': groups_left,
             }
-            
+
             # Show metadata dialog
             CompanyMetadataDialog.show_company_info(company_metadata)
             print("[INFO] ✓ Company metadata displayed to user")
