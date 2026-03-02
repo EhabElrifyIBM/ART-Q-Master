@@ -490,19 +490,20 @@ def get_case_closing_code(case_number, cases_completed_count, total_in_progress_
             return header
 
         def _create_button(self, label_text, code, bg_color):
-            """IBM Carbon action button — layer card style with left border on hover"""
+            """IBM Carbon action button — solid accent color, centered text, easy to click"""
             from PyQt5.QtGui import QFont
             btn = QPushButton(label_text)
-            btn.setFont(QFont('IBM Plex Sans', _fs2))
-            btn.setMinimumHeight(44)
+            btn.setFont(QFont('IBM Plex Sans', _fs2, QFont.Bold))
+            btn.setMinimumHeight(52)
             btn.setStyleSheet(
                 f"QPushButton {{ background-color: {_c2['layer_01']};"
                 f" border: 1px solid {_c2['border_subtle']}; border-radius: 4px;"
-                f" font-weight: 500; color: {_c2['text_primary']};"
-                f" padding: 10px 12px; text-align: left; }}"
-                f"QPushButton:hover {{ background-color: {_c2['layer_02']};"
-                f" border-left: 3px solid {_c2['interactive']}; color: {_c2['interactive']}; }}"
-                f"QPushButton:pressed {{ background-color: {_c2['layer_03']}; }}"
+                f" font-weight: 600; color: {_c2['text_primary']};"
+                f" padding: 12px 16px; text-align: center; }}"
+                f"QPushButton:hover {{ background-color: {_c2['interactive']};"
+                f" color: #ffffff; border: 1px solid {_c2['interactive']}; }}"
+                f"QPushButton:pressed {{ background-color: {_c2['interactive_hover']};"
+                f" color: #ffffff; }}"
             )
             btn.clicked.connect(lambda: self.on_button_clicked(code))
             return btn
@@ -667,35 +668,60 @@ def get_call_closing_code():
     """
     closing_code = {"value": None, "add_note": False}
 
+    from ibm_theme import get_qss, IBM, _read_font_size as _rfs_cc
+    _cc_fs = _rfs_cc()
+    _c_cc = IBM.LIGHT
+
     class CallOutcomeDialog(QDialog):
         def __init__(self):
             super().__init__()
             self.setWindowTitle("Call Closing Code")
-            self.resize(400, 450)
-            
+            self.setMinimumWidth(460)
+            self.setStyleSheet(get_qss('light', _cc_fs))
+            self.setFont(QFont('IBM Plex Sans', _cc_fs))
+
             main_layout = QVBoxLayout(self)
-            main_layout.setContentsMargins(10, 10, 10, 10)
-            main_layout.setSpacing(10)
-            
-            label = QLabel("Select Call Closing Code:")
-            label.setStyleSheet("font-weight: bold;")
-            main_layout.addWidget(label)
-            
+            main_layout.setContentsMargins(24, 20, 24, 20)
+            main_layout.setSpacing(14)
+
+            header = QLabel("Select Call Closing Code")
+            header.setFont(QFont('IBM Plex Sans', _cc_fs, QFont.Bold))
+            header.setStyleSheet(
+                f"font-weight: 700; color: {_c_cc['interactive']};"
+                f" background: transparent; border: none;"
+            )
+            main_layout.addWidget(header)
+
+            sep = QFrame()
+            sep.setFrameShape(QFrame.HLine)
+            sep.setStyleSheet(f"color: {_c_cc['border_subtle']};")
+            main_layout.addWidget(sep)
+
             btn_frame = QWidget()
             grid = QGridLayout(btn_frame)
-            grid.setSpacing(8)
+            grid.setSpacing(10)
             grid.setColumnStretch(0, 1)
             grid.setColumnStretch(1, 1)
-            
+
             buttons = [
-                ("Issue Resolved", "Called - Answered: Issue Resolved"),
-                ("Issue Not Fixed", "Called - Answered: Issue Not Resolved"),
-                ("Not Reached", "Customer Not Reached"),
-                ("Not Yet Tested", "Customer Claims that the Machine Not Yet Tested"),
-                ("Left Voicemail", "Called: Not Reached // left Voicemail"),
-                ("Ext Not Found", "Called - Company NO. Extension Found: Not Reached"),
+                ("Issue Resolved",    "Called - Answered: Issue Resolved"),
+                ("Issue Not Fixed",   "Called - Answered: Issue Not Resolved"),
+                ("Not Reached",       "Customer Not Reached"),
+                ("Not Yet Tested",    "Customer Claims that the Machine Not Yet Tested"),
+                ("Left Voicemail",    "Called: Not Reached // left Voicemail"),
+                ("Ext Not Found",     "Called - Company NO. Extension Found: Not Reached"),
             ]
-            
+
+            # Accent colors per button type
+            _btn_colors = [
+                (_c_cc['interactive'],    _c_cc['interactive_hover']),   # Resolved  — Blue
+                (_c_cc['danger'],         _c_cc['danger_hover']),         # Not Fixed — Red
+                (_c_cc['text_secondary'], _c_cc['interactive']),          # Not Reached — Grey
+                (_c_cc['teal'],           _c_cc['teal_hover']),           # Not Tested — Teal
+                (_c_cc['purple'],         _c_cc['purple_hover']),         # Voicemail — Purple
+                (_c_cc['text_secondary'], _c_cc['interactive']),          # Ext Not Found — Grey
+            ]
+
             def set_code_and_close(code):
                 closing_code["value"] = code
                 try:
@@ -703,7 +729,7 @@ def get_call_closing_code():
                 except Exception:
                     closing_code["add_note"] = False
                 self.accept()
-            
+
             def ask_other_code():
                 try:
                     text, ok = QInputDialog.getText(self, "Custom Closing Code", "Enter custom closing code:")
@@ -711,56 +737,44 @@ def get_call_closing_code():
                         set_code_and_close(text.strip())
                 except Exception as e:
                     print(f"[WARN] Custom code input failed: {e}")
-            
-            for idx, (label_text, code) in enumerate(buttons):
+
+            for idx, ((label_text, code), (bg, hover)) in enumerate(zip(buttons, _btn_colors)):
                 r = idx // 2
                 c = idx % 2
                 btn = QPushButton(label_text)
-                btn.setMinimumHeight(45)
-                btn.setStyleSheet("""
-                    QPushButton {
-                        background-color: #E3F2FD;
-                        border: 1px solid #CCCCCC;
-                        border-radius: 4px;
-                        font-weight: bold;
-                        color: #333;
-                        padding: 8px 12px;
-                    }
-                    QPushButton:hover {
-                        border: 2px solid #1976D2;
-                    }
-                    QPushButton:pressed {
-                        background-color: #90CAF9;
-                    }
-                """)
+                btn.setFont(QFont('IBM Plex Sans', _cc_fs, QFont.Bold))
+                btn.setMinimumHeight(56)
+                btn.setStyleSheet(
+                    f"QPushButton {{ background-color: {bg}; color: #ffffff;"
+                    f" border: none; border-radius: 4px;"
+                    f" font-weight: 700; padding: 14px 12px;"
+                    f" font-size: {_cc_fs}pt; text-align: center; }}"
+                    f"QPushButton:hover {{ background-color: {hover}; }}"
+                    f"QPushButton:pressed {{ border: 2px inset rgba(0,0,0,0.2); }}"
+                )
                 btn.clicked.connect(lambda checked=False, c=code: set_code_and_close(c))
                 grid.addWidget(btn, r, c)
-            
+
             main_layout.addWidget(btn_frame)
-            
+
             other_btn = QPushButton("Custom Code")
-            other_btn.setMinimumHeight(40)
-            other_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #FFF3E0;
-                    border: 1px solid #CCCCCC;
-                    border-radius: 4px;
-                    font-weight: bold;
-                    color: #333;
-                    padding: 6px;
-                }
-                QPushButton:hover {
-                    border: 2px solid #FF9800;
-                }
-            """)
+            other_btn.setFont(QFont('IBM Plex Sans', _cc_fs))
+            other_btn.setMinimumHeight(44)
+            other_btn.setStyleSheet(
+                f"QPushButton {{ background-color: transparent; color: {_c_cc['text_secondary']};"
+                f" border: 1px solid {_c_cc['border_subtle']}; border-radius: 4px;"
+                f" font-weight: 600; padding: 10px;"
+                f" font-size: {_cc_fs}pt; }}"
+                f"QPushButton:hover {{ background-color: {_c_cc['layer_02']}; color: {_c_cc['text_primary']}; }}"
+            )
             other_btn.clicked.connect(ask_other_code)
             main_layout.addWidget(other_btn)
-            
-            self.add_note_checkbox = QCheckBox("✓ Add Case Note")
-            self.add_note_checkbox.setStyleSheet("padding: 8px;")
+
+            self.add_note_checkbox = QCheckBox("Add Case Note")
+            self.add_note_checkbox.setFont(QFont('IBM Plex Sans', _cc_fs))
+            self.add_note_checkbox.setStyleSheet(f"padding: 6px; color: {_c_cc['text_primary']};")
             main_layout.addWidget(self.add_note_checkbox)
-            
-            main_layout.addStretch()
+
             self.setLayout(main_layout)
     
     app = QApplication.instance()

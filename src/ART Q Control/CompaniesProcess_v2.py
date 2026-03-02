@@ -84,17 +84,18 @@ from CaseReviewer_v2 import get_call_closing_code
 CRM_URL = "https://lenovo-plrs-prod.crm5.dynamics.com/main.aspx?appid=00fd771a-9081-e911-a83a-000d3a07fba2&forceUCI=1&pagetype=dashboard&id=4e76815a-1f63-df11-ae90-00155d2e3002&type=system&_canOverride=true"
 
 
-def show_per_case_outcomes_dialog(email, cases):
+def show_per_case_outcomes_dialog(email, cases, batch_index=1, total_batches=1):
     """
     Shows a dialog allowing the user to set individual outcomes for each case in a company batch.
-    
+
     Args:
         email: Company email address
         cases: List of case dicts with 'case_number', 'serial', 'mtm', 'row_idx'
-    
+        batch_index: 1-based index of this batch in the overall company queue
+        total_batches: Total number of distinct email groups (batches) to process
+
     Returns:
         dict: {case_number: outcome} mapping, or None if cancelled
-        Example: {2028926072: 'Issue Resolved', 2028926073: 'Issue Not Fixed'}
     """
     outcomes = {}
     
@@ -118,6 +119,43 @@ def show_per_case_outcomes_dialog(email, cases):
             main_layout = QVBoxLayout(self)
             main_layout.setContentsMargins(24, 20, 24, 20)
             main_layout.setSpacing(12)
+
+            # ========== TOP: Batch Progress Indicator ==========
+            batches_remaining = total_batches - batch_index
+
+            batch_bar_frame = QFrame()
+            batch_bar_frame.setStyleSheet(
+                f"background-color: {_c3['layer_01']};"
+                f"border-left: 4px solid {_c3['teal']};"
+                f"border-top: 1px solid {_c3['border_subtle']};"
+                f"border-right: 1px solid {_c3['border_subtle']};"
+                f"border-bottom: 1px solid {_c3['border_subtle']};"
+            )
+            batch_bar_lyt = QVBoxLayout(batch_bar_frame)
+            batch_bar_lyt.setContentsMargins(14, 10, 14, 10)
+            batch_bar_lyt.setSpacing(6)
+
+            progress_lbl = QLabel(
+                f"<b>Batch {batch_index} of {total_batches}</b>  ·  "
+                f"{len(cases)} case{'s' if len(cases) != 1 else ''} in this batch  ·  "
+                f"<b>{batches_remaining} batch{'es' if batches_remaining != 1 else ''} remaining</b>"
+            )
+            progress_lbl.setFont(QFont('IBM Plex Sans', _fs3 - 1))
+            progress_lbl.setStyleSheet(f"color: {_c3['text_primary']}; background: transparent; border: none;")
+            batch_bar_lyt.addWidget(progress_lbl)
+
+            batch_bar = QProgressBar()
+            batch_bar.setMinimum(0)
+            batch_bar.setMaximum(total_batches)
+            batch_bar.setValue(batch_index)
+            batch_bar.setTextVisible(False)
+            batch_bar.setFixedHeight(6)
+            batch_bar.setStyleSheet(
+                f"QProgressBar {{ border: none; border-radius: 3px; background: {_c3['progress_track']}; }}"
+                f"QProgressBar::chunk {{ background: {_c3['teal']}; border-radius: 3px; }}"
+            )
+            batch_bar_lyt.addWidget(batch_bar)
+            main_layout.addWidget(batch_bar_frame)
 
             # Header
             header = QLabel(f"Call Results  —  {email}")

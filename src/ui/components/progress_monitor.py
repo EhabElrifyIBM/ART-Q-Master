@@ -141,210 +141,260 @@ class ProgressMonitor(QDialog):
         self._init_ui()
     
     def _init_ui(self):
-        """Initialize UI components with LARGER FONTS"""
-        main_layout = QVBoxLayout()
-        main_layout.setSpacing(10)
-        main_layout.setContentsMargins(15, 15, 15, 15)
-        
-        # ========== TOP SECTION: Title & Status ==========
-        top_layout = QVBoxLayout()
-        
-        self.title_label = QLabel("ART Q Master - AutoSender Progress")
-        title_font = QFont()
-        title_font.setPointSize(18)  # INCREASED from 16
-        title_font.setBold(True)
-        self.title_label.setFont(title_font)
-        self.title_label.setStyleSheet("color: #1976D2;")
-        top_layout.addWidget(self.title_label)
-        
-        self.status_label = QLabel("Status: Processing...")
-        status_font = QFont()
-        status_font.setPointSize(14)  # INCREASED from 12
-        self.status_label.setFont(status_font)
-        self.status_label.setStyleSheet("color: #333333;")
-        top_layout.addWidget(self.status_label)
-        
-        main_layout.addLayout(top_layout)
-        
-        # ========== PROGRESS SECTION ==========
-        progress_layout = QVBoxLayout()
-        
-        # Current case info
-        self.case_info_label = QLabel()
-        case_font = QFont()
-        case_font.setPointSize(14)  # INCREASED from 13
-        case_font.setBold(True)
-        self.case_info_label.setFont(case_font)
-        progress_layout.addWidget(self.case_info_label)
-        
-        # Progress bar
+        """IBM Carbon Design progress monitor layout."""
+        # Pull IBM tokens if available
+        try:
+            from ibm_theme import IBM, _read_font_size
+            _c = IBM.LIGHT
+            _fs = _read_font_size()
+        except Exception:
+            _c = {
+                'bg': '#f4f4f4', 'layer_01': '#ffffff', 'layer_02': '#f4f4f4',
+                'layer_03': '#e8e8e8', 'text_primary': '#161616',
+                'text_secondary': '#525252', 'text_on_color': '#ffffff',
+                'interactive': '#0f62fe', 'interactive_hover': '#0353e9',
+                'interactive_active': '#002d9c', 'danger': '#da1e28',
+                'danger_hover': '#b81922', 'success': '#198038',
+                'border_subtle': '#e0e0e0', 'progress_track': '#e0e0e0',
+                'progress_fill': '#0f62fe', 'disabled_bg': '#c6c6c6',
+                'text_disabled': '#a8a8a8',
+            }
+            _fs = 13
+
+        ff = "'IBM Plex Sans','Segoe UI',Arial,sans-serif"
+
+        main = QVBoxLayout()
+        main.setContentsMargins(24, 20, 24, 16)
+        main.setSpacing(0)
+
+        # ── HEADER ────────────────────────────────────────────────────────────
+        title = QLabel("AutoSender  ·  Progress Monitor")
+        title.setFont(QFont('IBM Plex Sans', _fs + 4, QFont.Bold))
+        title.setStyleSheet(
+            f"font-weight: 800; color: {_c['interactive']};"
+            f" background: transparent; letter-spacing: 0.5px;"
+        )
+        main.addWidget(title)
+
+        self.status_label = QLabel("Status: Initializing…")
+        self.status_label.setFont(QFont('IBM Plex Sans', _fs - 1))
+        self.status_label.setStyleSheet(
+            f"color: {_c['text_secondary']}; background: transparent;"
+        )
+        main.addWidget(self.status_label)
+        main.addSpacing(16)
+
+        # ── CURRENT CASE INFO ─────────────────────────────────────────────────
+        self.case_info_label = QLabel("Waiting for first case…")
+        self.case_info_label.setFont(QFont('IBM Plex Sans', _fs, QFont.Bold))
+        self.case_info_label.setStyleSheet(
+            f"font-weight: 700; color: {_c['text_primary']}; background: transparent;"
+        )
+        main.addWidget(self.case_info_label)
+        main.addSpacing(8)
+
+        # ── PROGRESS BAR ──────────────────────────────────────────────────────
         self.progress_bar = QProgressBar()
         self.progress_bar.setMinimum(0)
         self.progress_bar.setMaximum(100)
+        self.progress_bar.setValue(0)
         self.progress_bar.setTextVisible(True)
-        progress_bar_font = QFont()
-        progress_bar_font.setPointSize(13)  # INCREASED from 11
-        progress_bar_font.setBold(True)
-        self.progress_bar.setFont(progress_bar_font)
-        self.progress_bar.setMinimumHeight(14)
-        self.progress_bar.setStyleSheet("")
-        progress_layout.addWidget(self.progress_bar)
-        
-        # Statistics (now below progress bar)
-        self.stats_label = QLabel()
-        stats_font = QFont()
-        stats_font.setPointSize(13)
-        self.stats_label.setFont(stats_font)
-        self.stats_label.setStyleSheet("color: #666666;")
-        progress_layout.addWidget(self.stats_label)
-        
-        main_layout.addLayout(progress_layout)
-        
-        # ========== CONTROL BUTTONS SECTION ==========
-        buttons_layout = QHBoxLayout()
-        buttons_layout.setSpacing(8)
-        
-        self.pause_btn = QPushButton("⏸ Pause")
-        button_font = QFont()
-        button_font.setPointSize(12)  # INCREASED from 10
-        button_font.setBold(True)
-        self.pause_btn.setFont(button_font)
-        self.pause_btn.setMinimumHeight(45)  # INCREASED height
+        self.progress_bar.setFormat("%p%  (%v / %m)")
+        self.progress_bar.setFont(QFont('IBM Plex Sans', _fs - 2, QFont.Bold))
+        self.progress_bar.setMinimumHeight(28)
+        self.progress_bar.setStyleSheet(
+            f"QProgressBar {{ border: none; border-radius: 4px;"
+            f" background: {_c['progress_track']};"
+            f" color: {_c['text_primary']}; text-align: center;"
+            f" font-weight: 600; }}"
+            f"QProgressBar::chunk {{ background: {_c['interactive']};"
+            f" border-radius: 4px; }}"
+        )
+        main.addWidget(self.progress_bar)
+        main.addSpacing(12)
+
+        # ── STAT CARDS ROW ────────────────────────────────────────────────────
+        stats_row = QHBoxLayout()
+        stats_row.setSpacing(8)
+
+        def _stat_card(label, color):
+            frame = QFrame()
+            frame.setStyleSheet(
+                f"QFrame {{ background: {_c['layer_01']};"
+                f" border-left: 4px solid {color};"
+                f" border-top: 1px solid {_c['border_subtle']};"
+                f" border-right: 1px solid {_c['border_subtle']};"
+                f" border-bottom: 1px solid {_c['border_subtle']}; }}"
+            )
+            col = QVBoxLayout(frame)
+            col.setContentsMargins(12, 8, 12, 8)
+            col.setSpacing(2)
+            lbl = QLabel(label.upper())
+            lbl.setFont(QFont('IBM Plex Sans', _fs - 5, QFont.Bold))
+            lbl.setStyleSheet(
+                f"color: {_c['text_secondary']}; letter-spacing: 1px;"
+                f" background: transparent; border: none;"
+            )
+            val = QLabel("0")
+            val.setFont(QFont('IBM Plex Sans', _fs + 4, QFont.Bold))
+            val.setStyleSheet(
+                f"font-weight: 800; color: {color};"
+                f" background: transparent; border: none;"
+            )
+            col.addWidget(lbl)
+            col.addWidget(val)
+            return frame, val
+
+        card_completed, self._val_completed = _stat_card("Completed", _c['interactive'])
+        card_skipped,   self._val_skipped   = _stat_card("Skipped",   _c.get('warning', '#f1c21b'))
+        card_failed,    self._val_failed     = _stat_card("Failed",    _c['danger'])
+        card_elapsed,   self._val_elapsed    = _stat_card("Elapsed",   _c['text_secondary'])
+
+        stats_row.addWidget(card_completed)
+        stats_row.addWidget(card_skipped)
+        stats_row.addWidget(card_failed)
+        stats_row.addWidget(card_elapsed)
+        main.addLayout(stats_row)
+        main.addSpacing(16)
+
+        # ── CONTROL BUTTONS ───────────────────────────────────────────────────
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(10)
+
+        _btn_base = (
+            f"QPushButton {{ font-family: {ff}; font-size: {_fs}pt;"
+            f" font-weight: 700; border: none; border-radius: 4px;"
+            f" padding: 10px 20px; min-height: 44px; }}"
+        )
+
+        self.pause_btn = QPushButton("Pause")
+        self.pause_btn.setFont(QFont('IBM Plex Sans', _fs, QFont.Bold))
+        self.pause_btn.setMinimumHeight(44)
+        self.pause_btn.setMinimumWidth(110)
+        self.pause_btn.setStyleSheet(
+            _btn_base +
+            f"QPushButton {{ background-color: transparent;"
+            f" color: {_c['interactive']};"
+            f" border: 2px solid {_c['interactive']}; }}"
+            f"QPushButton:hover {{ background-color: {_c['interactive']};"
+            f" color: #ffffff; }}"
+            f"QPushButton:disabled {{ border-color: {_c['disabled_bg']};"
+            f" color: {_c['text_disabled']}; }}"
+        )
         self.pause_btn.clicked.connect(self._on_pause_clicked)
-        self.pause_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #FFA726;
-                color: white;
-                font-weight: bold;
-                border: none;
-                border-radius: 5px;
-                padding: 8px 15px;
-            }
-            QPushButton:hover {
-                background-color: #FB8C00;
-            }
-            QPushButton:pressed {
-                background-color: #E65100;
-            }
-        """)
-        buttons_layout.addWidget(self.pause_btn)
-        
-        self.resume_btn = QPushButton("▶ Resume")
-        self.resume_btn.setFont(button_font)
-        self.resume_btn.setMinimumHeight(45)
-        self.resume_btn.clicked.connect(self._on_resume_clicked)
+        btn_row.addWidget(self.pause_btn)
+
+        self.resume_btn = QPushButton("Resume")
+        self.resume_btn.setFont(QFont('IBM Plex Sans', _fs, QFont.Bold))
+        self.resume_btn.setMinimumHeight(44)
+        self.resume_btn.setMinimumWidth(110)
         self.resume_btn.setEnabled(False)
-        self.resume_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #66BB6A;
-                color: white;
-                font-weight: bold;
-                border: none;
-                border-radius: 5px;
-                padding: 8px 15px;
-            }
-            QPushButton:hover {
-                background-color: #43A047;
-            }
-            QPushButton:disabled {
-                background-color: #CCCCCC;
-                color: #999999;
-            }
-        """)
-        buttons_layout.addWidget(self.resume_btn)
-        
-        self.stop_btn = QPushButton("⏹ Stop (Graceful)")
-        self.stop_btn.setFont(button_font)
-        self.stop_btn.setMinimumHeight(45)
+        self.resume_btn.setStyleSheet(
+            _btn_base +
+            f"QPushButton {{ background-color: {_c['interactive']};"
+            f" color: #ffffff; }}"
+            f"QPushButton:hover {{ background-color: {_c['interactive_hover']}; }}"
+            f"QPushButton:disabled {{ background-color: {_c['disabled_bg']};"
+            f" color: {_c['text_disabled']}; }}"
+        )
+        self.resume_btn.clicked.connect(self._on_resume_clicked)
+        btn_row.addWidget(self.resume_btn)
+
+        self.stop_btn = QPushButton("Stop (Graceful)")
+        self.stop_btn.setFont(QFont('IBM Plex Sans', _fs, QFont.Bold))
+        self.stop_btn.setMinimumHeight(44)
+        self.stop_btn.setMinimumWidth(150)
+        self.stop_btn.setStyleSheet(
+            _btn_base +
+            f"QPushButton {{ background-color: transparent;"
+            f" color: {_c['text_secondary']};"
+            f" border: 2px solid {_c['border_subtle']}; }}"
+            f"QPushButton:hover {{ background-color: {_c['layer_02']};"
+            f" color: {_c['text_primary']};"
+            f" border-color: {_c['text_secondary']}; }}"
+            f"QPushButton:disabled {{ border-color: {_c['disabled_bg']};"
+            f" color: {_c['text_disabled']}; }}"
+        )
         self.stop_btn.clicked.connect(self._on_stop_clicked)
-        self.stop_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #FDD835;
-                color: #333333;
-                font-weight: bold;
-                border: none;
-                border-radius: 5px;
-                padding: 8px 15px;
-            }
-            QPushButton:hover {
-                background-color: #F9A825;
-            }
-        """)
-        buttons_layout.addWidget(self.stop_btn)
-        
-        self.abort_btn = QPushButton("🛑 Abort")
-        self.abort_btn.setFont(button_font)
-        self.abort_btn.setMinimumHeight(45)
+        btn_row.addWidget(self.stop_btn)
+
+        self.abort_btn = QPushButton("Abort")
+        self.abort_btn.setFont(QFont('IBM Plex Sans', _fs, QFont.Bold))
+        self.abort_btn.setMinimumHeight(44)
+        self.abort_btn.setMinimumWidth(110)
+        self.abort_btn.setStyleSheet(
+            _btn_base +
+            f"QPushButton {{ background-color: {_c['danger']};"
+            f" color: #ffffff; }}"
+            f"QPushButton:hover {{ background-color: {_c['danger_hover']}; }}"
+            f"QPushButton:disabled {{ background-color: {_c['disabled_bg']};"
+            f" color: {_c['text_disabled']}; }}"
+        )
         self.abort_btn.clicked.connect(self._on_abort_clicked)
-        self.abort_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #EF5350;
-                color: white;
-                font-weight: bold;
-                border: none;
-                border-radius: 5px;
-                padding: 8px 15px;
-            }
-            QPushButton:hover {
-                background-color: #E53935;
-            }
-        """)
-        buttons_layout.addWidget(self.abort_btn)
-        
-        buttons_layout.addStretch()
-        main_layout.addLayout(buttons_layout)
-        
-        # ========== LOGGING SECTION ==========
-        logging_label = QLabel("📋 Central Log:")
-        logging_font = QFont()
-        logging_font.setPointSize(13)  # INCREASED from 12
-        logging_font.setBold(True)
-        logging_label.setFont(logging_font)
-        main_layout.addWidget(logging_label)
-        
+        btn_row.addWidget(self.abort_btn)
+
+        btn_row.addStretch()
+
+        self.finish_btn = QPushButton("Close")
+        self.finish_btn.setFont(QFont('IBM Plex Sans', _fs, QFont.Bold))
+        self.finish_btn.setMinimumHeight(44)
+        self.finish_btn.setMinimumWidth(110)
+        self.finish_btn.setEnabled(False)
+        self.finish_btn.setStyleSheet(
+            _btn_base +
+            f"QPushButton {{ background-color: {_c['interactive']};"
+            f" color: #ffffff; }}"
+            f"QPushButton:hover {{ background-color: {_c['interactive_hover']}; }}"
+            f"QPushButton:disabled {{ background-color: {_c['disabled_bg']};"
+            f" color: {_c['text_disabled']}; }}"
+        )
+        self.finish_btn.clicked.connect(self.accept)
+        btn_row.addWidget(self.finish_btn)
+
+        main.addLayout(btn_row)
+        main.addSpacing(14)
+
+        # ── LOG SECTION ───────────────────────────────────────────────────────
+        log_header = QLabel("ACTIVITY LOG")
+        log_header.setFont(QFont('IBM Plex Sans', _fs - 4, QFont.Bold))
+        log_header.setStyleSheet(
+            f"color: {_c['text_secondary']}; letter-spacing: 1.2px;"
+            f" font-weight: 700; background: transparent;"
+            f" border-bottom: 2px solid {_c['border_subtle']};"
+            f" padding-bottom: 4px;"
+        )
+        main.addWidget(log_header)
+        main.addSpacing(6)
+
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
-        self.log_text.setMinimumHeight(250)
-        log_font = QFont("Courier New", 11)  # INCREASED from 10
-        self.log_text.setFont(log_font)
-        self.log_text.setStyleSheet("""
-            QTextEdit {
-                background-color: #F5F5F5;
-                border: 1px solid #CCCCCC;
-                border-radius: 3px;
-                font-family: 'Courier New', monospace;
-            }
-        """)
-        main_layout.addWidget(self.log_text)
-        
-        # ========== FINISH BUTTON ==========
-        self.finish_btn = QPushButton("✓ Close")
-        finish_font = QFont()
-        finish_font.setPointSize(13)  # INCREASED from 12
-        finish_font.setBold(True)
-        self.finish_btn.setFont(finish_font)
-        self.finish_btn.setMinimumHeight(45)  # INCREASED height
-        self.finish_btn.clicked.connect(self.accept)
-        self.finish_btn.setEnabled(False)
-        self.finish_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                font-weight: bold;
-                border: none;
-                border-radius: 5px;
-                padding: 10px;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-            QPushButton:disabled {
-                background-color: #CCCCCC;
-            }
-        """)
-        main_layout.addWidget(self.finish_btn)
-        
-        self.setLayout(main_layout)
+        self.log_text.setMinimumHeight(260)
+        self.log_text.setFont(QFont('IBM Plex Mono', _fs - 2))
+        self.log_text.setStyleSheet(
+            f"QTextEdit {{ background-color: {_c['layer_01']};"
+            f" border: 1px solid {_c['border_subtle']};"
+            f" border-radius: 4px;"
+            f" font-family: 'IBM Plex Mono','Courier New',monospace;"
+            f" font-size: {_fs - 2}pt;"
+            f" color: {_c['text_primary']};"
+            f" padding: 6px; }}"
+        )
+        main.addWidget(self.log_text)
+
+        self.setLayout(main)
+
+    # ── helper: update stat card values ──────────────────────────────────────
+    def _refresh_stat_cards(self):
+        """Keep stat cards in sync after update_progress calls."""
+        try:
+            self._val_completed.setText(str(self.cases_completed))
+            self._val_skipped.setText(str(self.cases_skipped))
+            self._val_failed.setText(str(self.cases_failed))
+            elapsed = (datetime.now() - self.start_time).total_seconds()
+            m, s = int(elapsed // 60), int(elapsed % 60)
+            self._val_elapsed.setText(f"{m:02}:{s:02}")
+        except Exception:
+            pass
     
     # ========== SIGNAL HANDLER METHODS (for thread-safe updates) ==========
     
@@ -377,27 +427,21 @@ class ProgressMonitor(QDialog):
         self.cases_failed = failed
         self.total_cases = total
         
-        # Update case info (current case)
-        self.case_info_label.setText(f"Processing Case {current_case_num}/{total}: {case_number}")
-        
+        # Update case info
+        self.case_info_label.setText(
+            f"Case {current_case_num} of {total}  ·  {case_number}"
+        )
+
         # Update progress bar
         if total > 0:
             percentage = int((current_case_num / total) * 100)
-            self.progress_bar.setValue(percentage)
-            self.progress_bar.setFormat(f"{current_case_num}/{total} ({percentage}%)")
-        
-        # Calculate average case time
-        elapsed = (datetime.now() - self.start_time).total_seconds()
-        avg_time = elapsed / max(1, (completed + skipped + failed))
-        avg_min = int(avg_time // 60)
-        avg_sec = int(avg_time % 60)
-        avg_str = f"{avg_min:02}:{avg_sec:02}"
-        
-        # Update statistics (below bar)
-        self.stats_label.setText(
-            f"✓ Completed: {completed} | ⏭ Skipped: {skipped} | ❌ Failed: {failed} | Avg Case Time: {avg_str}"
-        )
-        
+            self.progress_bar.setMaximum(total)
+            self.progress_bar.setValue(current_case_num)
+            self.progress_bar.setFormat(f"{current_case_num} / {total}  ({percentage}%)")
+
+        # Refresh stat cards
+        self._refresh_stat_cards()
+
         QApplication.processEvents()
     
     def log_message(self, message, level="INFO"):
