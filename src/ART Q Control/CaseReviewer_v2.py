@@ -26,9 +26,10 @@ from selenium.webdriver.chrome.service import Service
 from PyQt5.QtWidgets import (
     QApplication, QDialog, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
     QGridLayout, QInputDialog, QWidget, QCheckBox, QScrollArea, QProgressBar, QMessageBox,
-    QLineEdit, QRadioButton, QButtonGroup, QGroupBox
+    QLineEdit, QRadioButton, QButtonGroup, QGroupBox, QFrame
 )
 from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QFont
 from ui.settings_aware_dialog import SettingsAwareMixin
 
 # Ensure both src and this directory are in path for proper imports

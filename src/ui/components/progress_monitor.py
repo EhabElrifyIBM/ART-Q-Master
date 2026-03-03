@@ -95,7 +95,7 @@ class ProgressMonitor(QDialog):
         super().__init__(parent)
         self.setWindowTitle("ART Q Master - AutoSender")
         self.setMinimumWidth(700)
-        self.resize(780, 820)
+        self.resize(860, 820)
         self.setModal(True)
 
         # Apply IBM Carbon QSS (best-effort, falls back to empty string)
@@ -248,12 +248,12 @@ class ProgressMonitor(QDialog):
         card_completed, self._val_completed = _stat_card("Completed", _c['interactive'])
         card_skipped,   self._val_skipped   = _stat_card("Skipped",   _c.get('warning', '#f1c21b'))
         card_failed,    self._val_failed     = _stat_card("Failed",    _c['danger'])
-        card_elapsed,   self._val_elapsed    = _stat_card("Elapsed",   _c['text_secondary'])
+        card_avg_time,  self._val_avg_time   = _stat_card("AVG Time",   _c['text_secondary'])
 
         stats_row.addWidget(card_completed)
         stats_row.addWidget(card_skipped)
         stats_row.addWidget(card_failed)
-        stats_row.addWidget(card_elapsed)
+        stats_row.addWidget(card_avg_time)
         main.addLayout(stats_row)
         main.addSpacing(16)
 
@@ -393,8 +393,12 @@ class ProgressMonitor(QDialog):
             self._val_skipped.setText(str(self.cases_skipped))
             self._val_failed.setText(str(self.cases_failed))
             elapsed = (datetime.now() - self.start_time).total_seconds()
-            m, s = int(elapsed // 60), int(elapsed % 60)
-            self._val_elapsed.setText(f"{m:02}:{s:02}")
+            if self.cases_completed > 0:
+                avg = elapsed / self.cases_completed
+                m, s = int(avg // 60), int(avg % 60)
+                self._val_avg_time.setText(f"{m:02}:{s:02}")
+            else:
+                self._val_avg_time.setText("--:--")
         except Exception:
             pass
     
