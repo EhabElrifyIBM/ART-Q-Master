@@ -122,6 +122,21 @@ def run_q_control():
         app = QApplication.instance() or QApplication(sys.argv)
         QMessageBox.critical(None, "Error", f"Failed to launch ART Q Control: {e}")
 
+def run_reach_rate_calculator():
+    reach_rate_dir = os.path.join(project_root, 'src', 'Reach Rate Calculator')
+    if reach_rate_dir not in sys.path:
+        sys.path.insert(0, reach_rate_dir)
+    try:
+        ui_script = os.path.join(reach_rate_dir, 'ReachRateCalculatorUI.py')
+        if os.path.exists(ui_script):
+            runpy.run_path(ui_script, run_name="__main__")
+        else:
+            from ReachRateCalculatorUI import main
+            main()
+    except Exception as e:
+        app = QApplication.instance() or QApplication(sys.argv)
+        QMessageBox.critical(None, "Error", f"Failed to launch Reach Rate Calculator: {e}")
+
 def run_main_menu():
     try:
         from src.ui.main_menu import MainMenu
@@ -145,6 +160,8 @@ def main():
             run_archiver()
         elif cmd == 'qcontrol':
             run_q_control()
+        elif cmd == 'reachrate':
+            run_reach_rate_calculator()
         else:
             run_main_menu()
     else:

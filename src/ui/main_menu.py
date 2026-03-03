@@ -106,6 +106,12 @@ class MainMenu(QMainWindow):
         self.q_control_btn.setStyleSheet(btn_style)
         self.q_control_btn.clicked.connect(self.q_control_placeholder)
         btn_layout.addWidget(self.q_control_btn)
+
+        self.reach_rate_btn = QPushButton("Reach Rate Calculator")
+        self.reach_rate_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.reach_rate_btn.setStyleSheet(btn_style)
+        self.reach_rate_btn.clicked.connect(self.open_reach_rate_calculator)
+        btn_layout.addWidget(self.reach_rate_btn)
         layout.addWidget(btn_container)
 
         # Footer
@@ -207,6 +213,24 @@ class MainMenu(QMainWindow):
                     QMessageBox.critical(self, "Error", f"Dispatcher script not found: {main_script}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to launch ART Q Control: {e}")
+
+    def open_reach_rate_calculator(self):
+        try:
+            if getattr(sys, 'frozen', False):
+                subprocess.Popen([sys.executable, 'reachrate'])
+                self.close()
+            else:
+                current_dir = os.path.dirname(os.path.abspath(__file__))
+                src_dir = os.path.dirname(current_dir)
+                main_script = os.path.join(src_dir, 'main.py')
+
+                if os.path.exists(main_script):
+                    subprocess.Popen([sys.executable, main_script, 'reachrate'])
+                    self.close()
+                else:
+                    QMessageBox.critical(self, "Error", f"Dispatcher script not found: {main_script}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to launch Reach Rate Calculator: {e}")
 
 
 def main_menu_entry():
