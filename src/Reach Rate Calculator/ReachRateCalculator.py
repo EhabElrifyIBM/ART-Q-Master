@@ -160,6 +160,26 @@ class ReachRateCalculator:
         # Normalize case numbers
         pa["__case_num"] = pa[col_case].apply(_normalize_case_num)
 
+        # ── Step 1b: Complete missing Completion Dates from Last Status Change ─────
+        col_last_status = _find_col(pa, ["Last Status Change"])
+        if col_last_status:
+            def _is_blank(v):
+                if v is None: return True
+                if isinstance(v, float) and pd.isna(v): return True
+                return str(v).strip().lower() in ("", "nan", "none", "nat")
+
+            before_fill = pa[col_date].apply(_is_blank).sum()
+            if before_fill > 0:
+                fill_mask = pa[col_date].apply(_is_blank)
+                pa.loc[fill_mask, col_date] = pa.loc[fill_mask, col_last_status]
+                after_fill = pa[col_date].apply(_is_blank).sum()
+                self._log(
+                    f"  Completion Date: filled {before_fill - after_fill} empty cells"
+                    f" from 'Last Status Change' ({after_fill} still blank)"
+                )
+        else:
+            self._log("  'Last Status Change' column not found — skipping date completion", "WARNING")
+
         # ── Step 2: Date range filtering ───────────────────────────────────────
         if start_date or end_date:
             self._log(f"Applying date filter: {start_date} → {end_date}")
@@ -254,7 +274,7 @@ class ReachRateCalculator:
 
         # ── Step 6: Compute metrics ────────────────────────────────────────────
         self._log("Computing metrics…")
-        metrics = self._compute_metrics(pa, col_fa)
+        metrics = self._compute_metrics(pa, col_fa, col_date=col_date, col_wot=col_wot)
 
         # ── Step 7: Write Excel output ─────────────────────────────────────────
         self._log(f"Writing output to: {output_path}")
@@ -289,9 +309,10 @@ class ReachRateCalculator:
             return set()
         return set(df[col].apply(_normalize_case_num).dropna())
 
-    def _compute_metrics(self, pa: pd.DataFrame, col_fa: str) -> dict:
+    def _compute_metrics(self, pa: pd.DataFrame, col_fa: str,
+                          col_date: str = None, col_wot: str = None) -> dict:
         """Return a dict of metric DataFrames."""
-        metrics  = {}
+        metrics   = {}
         total_all = len(pa)
 
         # ── Overall Reach Rate ─────────────────────────────────────────────────
@@ -306,10 +327,12 @@ class ReachRateCalculator:
         })
         metrics["total_all"] = total_all
 
-        # ── Final Action distribution (all cases) ──────────────────────────────
+        # ── Helper: clean Final Action series ─────────────────────────────────
         fa_filled = pa[col_fa].fillna("").apply(
             lambda v: "" if (isinstance(v, float) and pd.isna(v)) else str(v).strip()
         ).replace("", "(blank)")
+
+        # ── Final Action distribution (all cases) ──────────────────────────────
         fa_counts  = fa_filled.value_counts().reset_index()
         fa_counts.columns = ["Final Action", "Count"]
         fa_counts["% of All Cases"] = (
@@ -343,6 +366,75 @@ class ReachRateCalculator:
         metrics["channel_summary"] = (
             pd.DataFrame(summary_rows) if summary_rows else pd.DataFrame()
         )
+
+        # ── Monthly × Channel pivot (reference chart format) ───────────────────
+        # Rows = months, Columns = Email / SMS / Calls  (count + reach %),  GT
+        if col_date:
+            pa["__month_period"] = pd.to_datetime(pa[col_date], errors="coerce").dt.to_period("M")
+            months = sorted(pa["__month_period"].dropna().unique())
+            ch_cols = [
+                ("Email",          "Emails"),
+                ("SMS",            "SMS"),
+                ("Confirmed Call", "Calls"),
+            ]
+            pivot_rows = []
+            for period in months:
+                m_mask = pa["__month_period"] == period
+                m_sub  = pa[m_mask]
+                row    = {"Month": period.strftime("%B %Y")}
+                gt     = 0
+                for ch_tag, col_name in ch_cols:
+                    ch_mask  = m_sub["Matching Channel"].str.contains(ch_tag, case=False, na=False)
+                    ch_sub   = m_sub[ch_mask]
+                    count    = len(ch_sub)
+                    reached  = int((ch_sub["Reach Status"] == "Reached").sum())
+                    rate     = round(reached / count * 100, 1) if count > 0 else 0
+                    gt      += count
+                    row[f"{col_name}_Count"]    = count
+                    row[f"{col_name}_Reach%"]   = rate
+                row["Grand Total"] = gt
+                pivot_rows.append(row)
+
+            # Grand Total summary row
+            if pivot_rows:
+                gt_row = {"Month": "Grand Total"}
+                for ch_tag, col_name in ch_cols:
+                    ch_mask  = pa["Matching Channel"].str.contains(ch_tag, case=False, na=False)
+                    ch_sub   = pa[ch_mask]
+                    count    = len(ch_sub)
+                    reached  = int((ch_sub["Reach Status"] == "Reached").sum())
+                    gt_row[f"{col_name}_Count"]  = count
+                    gt_row[f"{col_name}_Reach%"] = round(reached / count * 100, 1) if count > 0 else 0
+                gt_row["Grand Total"] = sum(r["Grand Total"] for r in pivot_rows)
+                pivot_rows.append(gt_row)
+
+            metrics["monthly_pivot"] = pd.DataFrame(pivot_rows) if pivot_rows else pd.DataFrame()
+            metrics["monthly_ch_cols"] = ch_cols  # keep label mapping for chart
+        else:
+            metrics["monthly_pivot"]    = pd.DataFrame()
+            metrics["monthly_ch_cols"]  = []
+
+        # ── Work Order Type reach rate ──────────────────────────────────────────
+        if col_wot:
+            wot_rows = []
+            for wot, grp in pa.groupby(pa[col_wot].fillna("(blank)")):
+                g_total   = len(grp)
+                g_reached = int((grp["Reach Status"] == "Reached").sum())
+                g_not     = int((grp["Reach Status"] == "Not Reached").sum())
+                g_unk     = g_total - g_reached - g_not
+                wot_rows.append({
+                    "Work Order Type": str(wot).strip(),
+                    "Cases":           g_total,
+                    "% of All Cases":  round(g_total   / total_all * 100, 1) if total_all > 0 else 0,
+                    "Reached":         g_reached,
+                    "Not Reached":     g_not,
+                    "Unknown":         g_unk,
+                    "Reach Rate (%)":  round(g_reached / g_total * 100, 1) if g_total > 0 else 0,
+                })
+            wot_rows.sort(key=lambda r: r["Cases"], reverse=True)
+            metrics["work_order_reach"] = pd.DataFrame(wot_rows) if wot_rows else pd.DataFrame()
+        else:
+            metrics["work_order_reach"] = pd.DataFrame()
 
         # ── Per-channel detail metrics ─────────────────────────────────────────
         for ch in ["SMS", "Email", "Confirmed Call", "Expected Call"]:
@@ -604,5 +696,146 @@ class ReachRateCalculator:
 
             self._log(f"  Written: {sheet_name} sheet ({total_ch} cases)")
 
+        # ==================================================================
+        # Sheet: Monthly Breakdown  &  By Work Order Type
+        # ==================================================================
+        self._add_monthly_sheet(workbook, metrics,
+                                 fmt_title, fmt_header, fmt_row, fmt_row_alt, fmt_section)
+        self._add_wot_sheet(workbook, metrics,
+                             fmt_title, fmt_header, fmt_row, fmt_row_alt, fmt_section)
+
         workbook.close()
         self._log(f"Output saved → {output_path}", "SUCCESS")
+
+    # ── Monthly Breakdown sheet writer (used by _write_excel) ────────────────
+
+    def _add_monthly_sheet(self, workbook, metrics: dict,
+                            fmt_title, fmt_header, fmt_row, fmt_row_alt, fmt_section):
+        pivot_df = metrics.get("monthly_pivot", pd.DataFrame())
+        if pivot_df.empty:
+            self._log("  Skipping Monthly Breakdown (no date data)")
+            return
+
+        ch_cols  = metrics.get("monthly_ch_cols", [])  # [(tag, label), …]
+        ws = workbook.add_worksheet("Monthly Breakdown")
+        ws.set_zoom(90)
+        ws.set_column(0, 0, 18)  # Month
+        ws.set_column(1, 20, 14)
+
+        # ── Title ──────────────────────────────────────────────────────────
+        ws.write(0, 0, "Reach Rate Breakdown by Communication Channel", fmt_title)
+        ws.write(1, 0, "(Reached = Issue Fixed, Not Fixed, Not Yet Tested, Escalated, DND cases)",
+                 workbook.add_format({"italic": True, "font_color": "#da1e28",
+                                       "font_name": "IBM Plex Sans", "font_size": 10}))
+
+        # ── Header row: Month | Email Count | Email % | SMS Count | SMS % | Calls Count | Calls % | GT
+        r = 3
+        ws.write(r, 0, "Month", fmt_header)
+        c = 1
+        col_map = {}  # label → (count_col, rate_col)
+        for _tag, label in ch_cols:
+            ws.write(r, c,     label,          fmt_header)
+            ws.write(r, c + 1, f"{label} Reach %", fmt_header)
+            col_map[label] = (c, c + 1)
+            c += 2
+        ws.write(r, c, "Grand Total", fmt_header)
+        gt_col = c
+        r += 1
+
+        # ── Data rows ─────────────────────────────────────────────────────
+        fmt_bold_row = workbook.add_format({"bold": True, "border": 1,
+                                              "bg_color": "#e0e0e0",
+                                              "font_name": "IBM Plex Sans"})
+        fmt_pct_cell = workbook.add_format({"border": 1, "bold": True,
+                                             "font_color": "#0f62fe",
+                                             "font_name": "IBM Plex Sans"})
+        data_start_row = r
+        for ri, row in pivot_df.iterrows():
+            is_total = str(row["Month"]) == "Grand Total"
+            base_fmt = fmt_bold_row if is_total else (fmt_row_alt if ri % 2 == 0 else fmt_row)
+            ws.write(r, 0, str(row["Month"]), base_fmt)
+            c = 1
+            for _tag, label in ch_cols:
+                cnt  = row.get(f"{label}_Count", 0)
+                rate = row.get(f"{label}_Reach%", 0)
+                ws.write(r, c,     int(cnt)  if not pd.isna(cnt)  else 0, base_fmt)
+                ws.write(r, c + 1, f"{rate}%" if not pd.isna(rate) else "0%",
+                          fmt_pct_cell if not is_total else fmt_bold_row)
+                c += 2
+            ws.write(r, gt_col, int(row.get("Grand Total", 0)), base_fmt)
+            r += 1
+        data_end_row = r - 2  # exclude grand total from chart
+
+        # ── Grouped bar chart: Reach % per channel per month ──────────────────
+        chart = workbook.add_chart({"type": "column"})
+        colors = ["#0f62fe", "#ff832b", "#198038"]  # IBM Blue / Orange / Green
+        for i, (_tag, label) in enumerate(ch_cols):
+            _cnt_col, rate_col = col_map[label]
+            chart.add_series({
+                "name":        label,
+                "categories":  [ws.name, data_start_row, 0, data_end_row, 0],
+                "values":      [ws.name, data_start_row, rate_col, data_end_row, rate_col],
+                "data_labels": {"value": True, "num_format": "0\"%\""},
+                "fill":        {"color": colors[i % len(colors)]},
+            })
+        chart.set_title({"name": "Reach Rate by Channel & Month",
+                         "name_font": {"name": "IBM Plex Sans", "bold": True}})
+        chart.set_x_axis({"name": "Month"})
+        chart.set_y_axis({"name": "Reach Rate (%)", "num_format": "0\"%\""})
+        chart.set_chartarea({"border": {"color": "#e0e0e0"}})
+        chart.set_size({"width": 620, "height": 300})
+        ws.insert_chart(r + 1, 0, chart)
+        self._log("  Written: Monthly Breakdown sheet")
+
+    def _add_wot_sheet(self, workbook, metrics: dict,
+                        fmt_title, fmt_header, fmt_row, fmt_row_alt, fmt_section):
+        wot_df = metrics.get("work_order_reach", pd.DataFrame())
+        if wot_df.empty:
+            self._log("  Skipping By Work Order Type (no data or column missing)")
+            return
+
+        ws = workbook.add_worksheet("By Work Order Type")
+        ws.set_zoom(90)
+        ws.set_column(0, 0, 30)  # WO Type name
+        ws.set_column(1, 7, 16)
+        ws.freeze_panes(1, 0)
+
+        ws.write(0, 0, "Reach Rate by Work Order Type", fmt_title)
+
+        # Header
+        for ci, col_name in enumerate(wot_df.columns):
+            ws.write(2, ci, col_name, fmt_header)
+
+        # Data
+        fmt_reached_pct = workbook.add_format({"border": 1, "bold": True,
+                                                 "font_color": "#198038",
+                                                 "font_name": "IBM Plex Sans"})
+        for ri, row in wot_df.iterrows():
+            r_idx  = ri + 3
+            base_f = fmt_row_alt if ri % 2 == 0 else fmt_row
+            for ci, col_name in enumerate(wot_df.columns):
+                val = row[col_name]
+                if col_name == "Reach Rate (%)":
+                    ws.write(r_idx, ci, val, fmt_reached_pct)
+                elif isinstance(val, (int, float)) and not pd.isna(val):
+                    ws.write(r_idx, ci, val, base_f)
+                else:
+                    ws.write(r_idx, ci, str(val), base_f)
+
+        # Bar chart: reach rate by WO Type (top 15 to keep readable)
+        n_rows = min(len(wot_df), 15)
+        chart = workbook.add_chart({"type": "bar"})
+        rate_col = list(wot_df.columns).index("Reach Rate (%)")
+        chart.add_series({
+            "name":        "Reach Rate (%)",
+            "categories":  [ws.name, 3, 0, 2 + n_rows, 0],
+            "values":      [ws.name, 3, rate_col, 2 + n_rows, rate_col],
+            "data_labels": {"value": True},
+            "fill":        {"color": "#0f62fe"},
+        })
+        chart.set_title({"name": "Reach Rate by Work Order Type",
+                         "name_font": {"name": "IBM Plex Sans", "bold": True}})
+        chart.set_chartarea({"border": {"color": "#e0e0e0"}})
+        chart.set_size({"width": 580, "height": 340})
+        ws.insert_chart(3, len(wot_df.columns) + 1, chart)
+        self._log("  Written: By Work Order Type sheet")
