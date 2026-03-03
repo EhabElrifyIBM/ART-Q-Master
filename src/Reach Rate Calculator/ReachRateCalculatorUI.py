@@ -8,38 +8,44 @@ Runs the calculation engine in a background QThread.
 import os
 import sys
 import subprocess
-import threading
 from datetime import date
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QTextEdit, QFileDialog, QGroupBox,
     QCheckBox, QDateEdit, QFrame, QSizePolicy, QMessageBox,
-    QScrollArea
+    QSpacerItem
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QDate, QObject
-from PyQt5.QtGui import QFont, QIcon
+from PyQt5.QtGui import QFont, QIcon, QFontDatabase
 
 
-# ── IBM Carbon Tokens ──────────────────────────────────────────────────────────
+# ── IBM Carbon Design Tokens ───────────────────────────────────────────────────
 IBM = {
-    "bg":           "#f4f4f4",
-    "layer_01":     "#ffffff",
-    "layer_02":     "#f4f4f4",
-    "text_primary":  "#161616",
-    "text_secondary":"#525252",
-    "interactive":   "#0f62fe",
+    "bg":                "#f4f4f4",
+    "layer_01":          "#ffffff",
+    "layer_02":          "#e8e8e8",
+    "text_primary":      "#161616",
+    "text_secondary":    "#525252",
+    "interactive":       "#0f62fe",
     "interactive_hover": "#0353e9",
-    "danger":        "#da1e28",
-    "danger_hover":  "#b81922",
-    "success":       "#198038",
-    "warning":       "#f1c21b",
-    "border_subtle": "#e0e0e0",
-    "disabled_bg":   "#c6c6c6",
-    "text_disabled": "#a8a8a8",
-    "purple":        "#6929c4",
-    "teal":          "#005d5d",
+    "danger":            "#da1e28",
+    "danger_hover":      "#b81922",
+    "success":           "#198038",
+    "success_hover":     "#0e6027",
+    "warning":           "#f1c21b",
+    "border_subtle":     "#c6c6c6",
+    "border_strong":     "#8d8d8d",
+    "disabled_bg":       "#c6c6c6",
+    "text_disabled":     "#8d8d8d",
 }
 FF = "'IBM Plex Sans','Segoe UI',Arial,sans-serif"
+FM = "'IBM Plex Mono','Consolas','Courier New',monospace"
+
+# Base font size — all sizes derived from this so DPI scaling is consistent
+BASE  = 14   # px  (was 12-13, felt tiny on high-DPI)
+LARGE = 16
+TITLE = 22
+SMALL = 12
 
 
 # ── Worker Thread ──────────────────────────────────────────────────────────────
@@ -54,10 +60,10 @@ class CalculatorWorker(QThread):
     def __init__(self, pa_path, sms_path, email_path, phone_path,
                  output_path, start_date=None, end_date=None):
         super().__init__()
-        self.pa_path    = pa_path
-        self.sms_path   = sms_path
-        self.email_path = email_path
-        self.phone_path = phone_path
+        self.pa_path     = pa_path
+        self.sms_path    = sms_path
+        self.email_path  = email_path
+        self.phone_path  = phone_path
         self.output_path = output_path
         self.start_date  = start_date
         self.end_date    = end_date
@@ -65,7 +71,6 @@ class CalculatorWorker(QThread):
 
     def run(self):
         try:
-            # Import engine (same directory)
             current_dir = os.path.dirname(os.path.abspath(__file__))
             if current_dir not in sys.path:
                 sys.path.insert(0, current_dir)
@@ -76,10 +81,10 @@ class CalculatorWorker(QThread):
 
             calc = ReachRateCalculator(log_fn=log_fn)
             calc.load_files(
-                pa_path   = self.pa_path,
-                sms_path  = self.sms_path,
-                email_path= self.email_path,
-                phone_path= self.phone_path,
+                pa_path    = self.pa_path,
+                sms_path   = self.sms_path,
+                email_path = self.email_path,
+                phone_path = self.phone_path,
             )
             calc.run(
                 output_path = self.output_path,
@@ -92,56 +97,94 @@ class CalculatorWorker(QThread):
             self.signals.error.emit(f"{exc}\n{traceback.format_exc()}")
 
 
-# ── Shared Styles ──────────────────────────────────────────────────────────────
+# ── Shared Button Styles ───────────────────────────────────────────────────────
 
-def _btn_primary():
+def _s_primary():
     return f"""
         QPushButton {{
             background-color: {IBM['interactive']};
             color: #ffffff;
             border: none;
             border-radius: 4px;
-            padding: 10px 24px;
+            padding: 0 28px;
             font-family: {FF};
-            font-size: 13px;
+            font-size: {BASE}px;
             font-weight: 700;
-            min-height: 40px;
+            min-height: 44px;
+            min-width: 120px;
         }}
-        QPushButton:hover {{ background-color: {IBM['interactive_hover']}; }}
-        QPushButton:disabled {{ background-color: {IBM['disabled_bg']}; color: {IBM['text_disabled']}; }}
+        QPushButton:hover   {{ background-color: {IBM['interactive_hover']}; }}
+        QPushButton:pressed {{ background-color: #002d9c; }}
+        QPushButton:disabled {{
+            background-color: {IBM['disabled_bg']};
+            color: {IBM['text_disabled']};
+        }}
     """
 
-def _btn_ghost():
-    return f"""
-        QPushButton {{
-            background-color: transparent;
-            color: {IBM['interactive']};
-            border: 2px solid {IBM['interactive']};
-            border-radius: 4px;
-            padding: 10px 24px;
-            font-family: {FF};
-            font-size: 13px;
-            font-weight: 700;
-            min-height: 40px;
-        }}
-        QPushButton:hover {{ background-color: {IBM['interactive']}; color: #ffffff; }}
-        QPushButton:disabled {{ border-color: {IBM['disabled_bg']}; color: {IBM['text_disabled']}; }}
-    """
-
-def _btn_success():
+def _s_success():
     return f"""
         QPushButton {{
             background-color: {IBM['success']};
             color: #ffffff;
             border: none;
             border-radius: 4px;
-            padding: 10px 24px;
+            padding: 0 28px;
             font-family: {FF};
-            font-size: 13px;
+            font-size: {BASE}px;
             font-weight: 700;
-            min-height: 40px;
+            min-height: 44px;
+            min-width: 140px;
         }}
-        QPushButton:hover {{ background-color: #0e6027; }}
+        QPushButton:hover   {{ background-color: {IBM['success_hover']}; }}
+        QPushButton:disabled {{
+            background-color: {IBM['disabled_bg']};
+            color: {IBM['text_disabled']};
+        }}
+    """
+
+def _s_ghost():
+    return f"""
+        QPushButton {{
+            background-color: transparent;
+            color: {IBM['interactive']};
+            border: 2px solid {IBM['interactive']};
+            border-radius: 4px;
+            padding: 0 22px;
+            font-family: {FF};
+            font-size: {BASE}px;
+            font-weight: 700;
+            min-height: 44px;
+            min-width: 100px;
+        }}
+        QPushButton:hover {{
+            background-color: {IBM['interactive']};
+            color: #ffffff;
+        }}
+        QPushButton:disabled {{
+            border-color: {IBM['disabled_bg']};
+            color: {IBM['text_disabled']};
+        }}
+    """
+
+def _s_browse():
+    """Compact ghost button for file rows."""
+    return f"""
+        QPushButton {{
+            background-color: transparent;
+            color: {IBM['interactive']};
+            border: 2px solid {IBM['interactive']};
+            border-radius: 4px;
+            padding: 0 16px;
+            font-family: {FF};
+            font-size: {BASE}px;
+            font-weight: 600;
+            min-height: 40px;
+            min-width: 90px;
+        }}
+        QPushButton:hover {{
+            background-color: {IBM['interactive']};
+            color: #ffffff;
+        }}
     """
 
 
@@ -155,27 +198,34 @@ class FileRow(QWidget):
         self._path = ""
 
         row = QHBoxLayout(self)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(10)
+        row.setContentsMargins(0, 4, 0, 4)
+        row.setSpacing(12)
 
+        # Label — fixed, wide enough for longest label
         lbl = QLabel(label)
-        lbl.setFixedWidth(230)
-        lbl.setStyleSheet(f"font-family: {FF}; font-size: 13px; font-weight: 600; color: {IBM['text_primary']};")
+        lbl.setFixedWidth(240)
+        lbl.setWordWrap(False)
+        lbl.setStyleSheet(
+            f"font-family: {FF}; font-size: {BASE}px; font-weight: 600;"
+            f"color: {IBM['text_primary']};"
+        )
         row.addWidget(lbl)
 
+        # Path display
         self._path_lbl = QLabel(placeholder)
         self._path_lbl.setStyleSheet(
-            f"font-family: {FF}; font-size: 12px; color: {IBM['text_secondary']};"
+            f"font-family: {FF}; font-size: {BASE}px; color: {IBM['text_secondary']};"
             f"background: {IBM['layer_01']}; border: 1px solid {IBM['border_subtle']};"
-            "border-radius: 4px; padding: 6px 10px;"
+            f"border-radius: 4px; padding: 6px 12px;"
         )
         self._path_lbl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self._path_lbl.setMinimumHeight(36)
+        self._path_lbl.setMinimumHeight(40)
         row.addWidget(self._path_lbl)
 
+        # Browse button
         browse_btn = QPushButton("Browse…")
-        browse_btn.setFixedWidth(100)
-        browse_btn.setStyleSheet(_btn_ghost())
+        browse_btn.setStyleSheet(_s_browse())
+        browse_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         browse_btn.clicked.connect(self._browse)
         row.addWidget(browse_btn)
 
@@ -188,9 +238,9 @@ class FileRow(QWidget):
             self._path = path
             self._path_lbl.setText(os.path.basename(path))
             self._path_lbl.setStyleSheet(
-                f"font-family: {FF}; font-size: 12px; color: {IBM['text_primary']};"
+                f"font-family: {FF}; font-size: {BASE}px; color: {IBM['text_primary']};"
                 f"background: {IBM['layer_01']}; border: 1px solid {IBM['interactive']};"
-                "border-radius: 4px; padding: 6px 10px;"
+                f"border-radius: 4px; padding: 6px 12px;"
             )
 
     def get_path(self) -> str:
@@ -207,10 +257,9 @@ class ReachRateCalculatorWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Reach Rate Calculator — ART Q Master")
-        self.setMinimumSize(860, 780)
-        self.resize(920, 850)
+        self.setMinimumSize(900, 820)
+        self.resize(980, 900)
 
-        # Icon
         try:
             current_dir = os.path.dirname(os.path.abspath(__file__))
             root = os.path.dirname(os.path.dirname(current_dir))
@@ -223,44 +272,56 @@ class ReachRateCalculatorWindow(QMainWindow):
         self._worker: CalculatorWorker = None
         self._output_path = ""
 
+        self._apply_global_stylesheet()
         self._build_ui()
-        self._apply_stylesheet()
 
     # ── UI Construction ────────────────────────────────────────────────────────
 
     def _build_ui(self):
         central = QWidget()
         self.setCentralWidget(central)
-        main = QVBoxLayout(central)
-        main.setContentsMargins(32, 24, 32, 20)
-        main.setSpacing(16)
+        root_layout = QVBoxLayout(central)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
 
-        # ── Header ────────────────────────────────────────────────────────────
+        # ── Top blue accent bar ────────────────────────────────────────────────
+        accent = QWidget()
+        accent.setFixedHeight(4)
+        accent.setStyleSheet(f"background: {IBM['interactive']};")
+        root_layout.addWidget(accent)
+
+        # ── Scrollable content ─────────────────────────────────────────────────
+        content = QWidget()
+        main = QVBoxLayout(content)
+        main.setContentsMargins(36, 28, 36, 24)
+        main.setSpacing(20)
+
+        # Header
         header = QLabel("Reach Rate Calculator")
         header.setStyleSheet(
-            f"font-family: {FF}; font-size: 22px; font-weight: 700;"
-            f"color: {IBM['interactive']};"
+            f"font-family: {FF}; font-size: {TITLE}px; font-weight: 700;"
+            f"color: {IBM['interactive']}; margin-bottom: 2px;"
         )
         main.addWidget(header)
 
         subtitle = QLabel(
-            "Upload the 4 required sheets, optionally select a time frame, then click Process."
+            "Upload the 4 required files, optionally select a time frame, then click Process."
         )
         subtitle.setStyleSheet(
-            f"font-family: {FF}; font-size: 13px; color: {IBM['text_secondary']};"
+            f"font-family: {FF}; font-size: {BASE}px; color: {IBM['text_secondary']};"
         )
         main.addWidget(subtitle)
 
-        self._add_divider(main)
+        # Divider
+        main.addWidget(self._make_divider())
 
         # ── File Upload Section ────────────────────────────────────────────────
-        upload_box = QGroupBox("Input Files")
-        upload_box.setStyleSheet(self._group_box_style())
+        upload_box = self._make_group("  Input Files")
         upload_layout = QVBoxLayout(upload_box)
-        upload_layout.setSpacing(12)
-        upload_layout.setContentsMargins(16, 20, 16, 16)
+        upload_layout.setSpacing(8)
+        upload_layout.setContentsMargins(20, 24, 20, 20)
 
-        self._row_pa    = FileRow("PA Cases (Active Cases Workbook)")
+        self._row_pa    = FileRow("PA Cases  (Active Cases Workbook)")
         self._row_sms   = FileRow("SMS View")
         self._row_email = FileRow("Email View")
         self._row_phone = FileRow("Phone Call View")
@@ -271,15 +332,22 @@ class ReachRateCalculatorWindow(QMainWindow):
         main.addWidget(upload_box)
 
         # ── Time Frame Section ─────────────────────────────────────────────────
-        time_box = QGroupBox("Time Frame (Optional)")
-        time_box.setStyleSheet(self._group_box_style())
+        time_box = self._make_group("  Time Frame  (Optional)")
         time_layout = QVBoxLayout(time_box)
-        time_layout.setContentsMargins(16, 20, 16, 16)
-        time_layout.setSpacing(10)
+        time_layout.setContentsMargins(20, 24, 20, 20)
+        time_layout.setSpacing(12)
 
         self._use_dates = QCheckBox("Filter by date range")
         self._use_dates.setStyleSheet(
-            f"font-family: {FF}; font-size: 13px; color: {IBM['text_primary']};"
+            f"QCheckBox {{ font-family: {FF}; font-size: {BASE}px;"
+            f"color: {IBM['text_primary']}; spacing: 8px; }}"
+            f"QCheckBox::indicator {{ width: 18px; height: 18px; }}"
+            f"QCheckBox::indicator:unchecked {{"
+            f"  border: 2px solid {IBM['border_strong']};"
+            f"  border-radius: 2px; background: {IBM['layer_01']}; }}"
+            f"QCheckBox::indicator:checked {{"
+            f"  border: 2px solid {IBM['interactive']};"
+            f"  border-radius: 2px; background: {IBM['interactive']}; }}"
         )
         self._use_dates.stateChanged.connect(self._toggle_date_range)
         time_layout.addWidget(self._use_dates)
@@ -289,47 +357,45 @@ class ReachRateCalculatorWindow(QMainWindow):
         date_hl.setContentsMargins(0, 0, 0, 0)
         date_hl.setSpacing(16)
 
-        lbl_from = QLabel("From:")
-        lbl_from.setStyleSheet(f"font-family: {FF}; font-size: 13px; color: {IBM['text_primary']};")
-        date_hl.addWidget(lbl_from)
+        for lbl_text, attr in (("From:", "_date_from"), ("To:", "_date_to")):
+            lbl = QLabel(lbl_text)
+            lbl.setStyleSheet(
+                f"font-family: {FF}; font-size: {BASE}px; font-weight: 600;"
+                f"color: {IBM['text_primary']};"
+            )
+            date_hl.addWidget(lbl)
 
-        self._date_from = QDateEdit()
-        self._date_from.setCalendarPopup(True)
-        self._date_from.setDate(QDate.currentDate().addMonths(-1))
-        self._date_from.setDisplayFormat("yyyy-MM-dd")
-        self._date_from.setStyleSheet(self._date_edit_style())
-        self._date_from.setFixedWidth(160)
-        self._date_from.setEnabled(False)
-        date_hl.addWidget(self._date_from)
-
-        lbl_to = QLabel("To:")
-        lbl_to.setStyleSheet(f"font-family: {FF}; font-size: 13px; color: {IBM['text_primary']};")
-        date_hl.addWidget(lbl_to)
-
-        self._date_to = QDateEdit()
-        self._date_to.setCalendarPopup(True)
-        self._date_to.setDate(QDate.currentDate())
-        self._date_to.setDisplayFormat("yyyy-MM-dd")
-        self._date_to.setStyleSheet(self._date_edit_style())
-        self._date_to.setFixedWidth(160)
-        self._date_to.setEnabled(False)
-        date_hl.addWidget(self._date_to)
+            de = QDateEdit()
+            de.setCalendarPopup(True)
+            if attr == "_date_from":
+                de.setDate(QDate.currentDate().addMonths(-1))
+            else:
+                de.setDate(QDate.currentDate())
+            de.setDisplayFormat("yyyy-MM-dd")
+            de.setStyleSheet(self._date_edit_style())
+            de.setMinimumWidth(160)
+            de.setMinimumHeight(40)
+            de.setEnabled(False)
+            setattr(self, attr, de)
+            date_hl.addWidget(de)
 
         date_hl.addStretch()
         time_layout.addWidget(date_row)
         main.addWidget(time_box)
 
         # ── Action Row ─────────────────────────────────────────────────────────
+        main.addWidget(self._make_divider())
+
         act_row = QHBoxLayout()
         act_row.setSpacing(12)
 
-        self._process_btn = QPushButton("⚙  Process")
-        self._process_btn.setStyleSheet(_btn_primary())
+        self._process_btn = QPushButton("⚙   Process")
+        self._process_btn.setStyleSheet(_s_primary())
         self._process_btn.clicked.connect(self._on_process)
         act_row.addWidget(self._process_btn)
 
-        self._open_btn = QPushButton("📂  Open Output")
-        self._open_btn.setStyleSheet(_btn_success())
+        self._open_btn = QPushButton("📂   Open Output")
+        self._open_btn.setStyleSheet(_s_success())
         self._open_btn.setEnabled(False)
         self._open_btn.clicked.connect(self._open_output)
         act_row.addWidget(self._open_btn)
@@ -337,7 +403,7 @@ class ReachRateCalculatorWindow(QMainWindow):
         act_row.addStretch()
 
         self._menu_btn = QPushButton("← Back to Menu")
-        self._menu_btn.setStyleSheet(_btn_ghost())
+        self._menu_btn.setStyleSheet(_s_ghost())
         self._menu_btn.clicked.connect(self._back_to_menu)
         act_row.addWidget(self._menu_btn)
 
@@ -346,9 +412,9 @@ class ReachRateCalculatorWindow(QMainWindow):
         # ── Log Section ────────────────────────────────────────────────────────
         log_hdr = QLabel("ACTIVITY LOG")
         log_hdr.setStyleSheet(
-            f"font-family: {FF}; font-size: 10px; font-weight: 700; letter-spacing: 1.5px;"
-            f"color: {IBM['text_secondary']};"
-            f"border-bottom: 2px solid {IBM['border_subtle']}; padding-bottom: 4px;"
+            f"font-family: {FF}; font-size: {SMALL}px; font-weight: 700;"
+            f"letter-spacing: 2px; color: {IBM['text_secondary']};"
+            f"border-bottom: 2px solid {IBM['border_subtle']}; padding-bottom: 6px;"
         )
         main.addWidget(log_hdr)
 
@@ -359,79 +425,114 @@ class ReachRateCalculatorWindow(QMainWindow):
             f"  background-color: {IBM['layer_01']};"
             f"  border: 1px solid {IBM['border_subtle']};"
             f"  border-radius: 4px;"
-            f"  font-family: 'IBM Plex Mono','Courier New',monospace;"
-            f"  font-size: 12px;"
+            f"  font-family: {FM};"
+            f"  font-size: {BASE}px;"
             f"  color: {IBM['text_primary']};"
-            f"  padding: 8px;"
+            f"  padding: 10px;"
+            f"  line-height: 1.5;"
             f"}}"
         )
-        self._log_text.setMinimumHeight(220)
+        self._log_text.setMinimumHeight(200)
         main.addWidget(self._log_text, 1)
 
-        # ── Footer ─────────────────────────────────────────────────────────────
+        # Footer
         footer = QLabel(
-            '<span style="font-size:12px; color:#525252;">'
+            f'<span style="font-size:{SMALL}px; color:{IBM["text_secondary"]};">'
             'Developed by: Ehab Elrify | Adam Maged &nbsp;·&nbsp; '
-            '<a href="mailto:ehab.elrify@ibm.com" style="color:#0f62fe;">ehab.elrify@ibm.com</a> | '
-            '<a href="mailto:abdelrahman.maged@ibm.com" style="color:#0f62fe;">abdelrahman.maged@ibm.com</a>'
-            '&nbsp;·&nbsp; Assurance Resolution Team</span>'
+            f'<a href="mailto:ehab.elrify@ibm.com" style="color:{IBM["interactive"]};">ehab.elrify@ibm.com</a> | '
+            f'<a href="mailto:abdelrahman.maged@ibm.com" style="color:{IBM["interactive"]};">abdelrahman.maged@ibm.com</a>'
+            ' &nbsp;·&nbsp; Assurance Resolution Team</span>'
         )
         footer.setAlignment(Qt.AlignCenter)
         footer.setOpenExternalLinks(True)
-        footer.setStyleSheet("padding-top: 6px;")
+        footer.setStyleSheet("padding-top: 8px;")
         main.addWidget(footer)
+
+        root_layout.addWidget(content, 1)
 
     # ── Styling Helpers ────────────────────────────────────────────────────────
 
-    def _group_box_style(self):
-        return f"""
+    def _make_group(self, title: str) -> QGroupBox:
+        gb = QGroupBox(title)
+        gb.setStyleSheet(f"""
             QGroupBox {{
                 font-family: {FF};
-                font-size: 13px;
+                font-size: {BASE}px;
                 font-weight: 700;
-                color: {IBM['text_primary']};
-                border: 1px solid {IBM['border_subtle']};
+                color: {IBM['interactive']};
+                border: 1.5px solid {IBM['border_subtle']};
                 border-radius: 6px;
-                margin-top: 14px;
+                margin-top: 18px;
                 background: {IBM['layer_01']};
+                padding-top: 6px;
             }}
             QGroupBox::title {{
                 subcontrol-origin: margin;
-                left: 14px;
-                padding: 0 6px;
+                subcontrol-position: top left;
+                left: 16px;
+                top: -2px;
+                padding: 2px 8px 2px 8px;
+                background: {IBM['layer_01']};
                 color: {IBM['interactive']};
+                border-radius: 3px;
             }}
-        """
+        """)
+        return gb
 
-    def _date_edit_style(self):
+    def _make_divider(self) -> QFrame:
+        line = QFrame()
+        line.setFrameShape(QFrame.HLine)
+        line.setFixedHeight(1)
+        line.setStyleSheet(f"background: {IBM['border_subtle']}; border: none;")
+        return line
+
+    def _date_edit_style(self) -> str:
         return f"""
             QDateEdit {{
-                font-family: {FF}; font-size: 13px;
-                border: 1px solid {IBM['border_subtle']};
-                border-radius: 4px; padding: 6px 10px;
-                background: {IBM['layer_01']};
+                font-family: {FF};
+                font-size: {BASE}px;
                 color: {IBM['text_primary']};
+                background: {IBM['layer_01']};
+                border: 1px solid {IBM['border_subtle']};
+                border-radius: 4px;
+                padding: 6px 12px;
+                min-height: 40px;
+            }}
+            QDateEdit:focus {{
+                border-color: {IBM['interactive']};
             }}
             QDateEdit:disabled {{
                 background: {IBM['layer_02']};
                 color: {IBM['text_disabled']};
+                border-color: {IBM['disabled_bg']};
+            }}
+            QDateEdit::drop-down {{
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 28px;
+                border-left: 1px solid {IBM['border_subtle']};
             }}
         """
 
-    def _apply_stylesheet(self):
+    def _apply_global_stylesheet(self):
         self.setStyleSheet(f"""
             QMainWindow, QWidget {{
                 background-color: {IBM['bg']};
                 color: {IBM['text_primary']};
                 font-family: {FF};
+                font-size: {BASE}px;
+            }}
+            QScrollBar:vertical {{
+                background: {IBM['layer_02']};
+                width: 8px;
+                border-radius: 4px;
+            }}
+            QScrollBar::handle:vertical {{
+                background: {IBM['border_strong']};
+                border-radius: 4px;
+                min-height: 30px;
             }}
         """)
-
-    def _add_divider(self, layout: QVBoxLayout):
-        line = QFrame()
-        line.setFrameShape(QFrame.HLine)
-        line.setStyleSheet(f"color: {IBM['border_subtle']};")
-        layout.addWidget(line)
 
     # ── Event Handlers ─────────────────────────────────────────────────────────
 
@@ -441,7 +542,6 @@ class ReachRateCalculatorWindow(QMainWindow):
         self._date_to.setEnabled(enabled)
 
     def _on_process(self):
-        # Validate inputs
         missing = []
         if not self._row_pa.is_set():    missing.append("PA Cases")
         if not self._row_sms.is_set():   missing.append("SMS View")
@@ -450,10 +550,9 @@ class ReachRateCalculatorWindow(QMainWindow):
 
         if missing:
             QMessageBox.warning(self, "Missing Files",
-                                f"Please select the following files:\n• " + "\n• ".join(missing))
+                                "Please select the following files:\n• " + "\n• ".join(missing))
             return
 
-        # Date range
         start_date = None
         end_date   = None
         if self._use_dates.isChecked():
@@ -466,7 +565,6 @@ class ReachRateCalculatorWindow(QMainWindow):
                                     "Start date must be before or equal to end date.")
                 return
 
-        # Ask for output path
         out_path, _ = QFileDialog.getSaveFileName(
             self, "Save Output As", "Reach_Rate_Report.xlsx",
             "Excel Files (*.xlsx);;All Files (*.*)"
@@ -480,7 +578,6 @@ class ReachRateCalculatorWindow(QMainWindow):
         self._open_btn.setEnabled(False)
         self._log("Starting Reach Rate Calculator…", "INFO")
 
-        # Launch worker thread
         self._worker = CalculatorWorker(
             pa_path    = self._row_pa.get_path(),
             sms_path   = self._row_sms.get_path(),
@@ -518,7 +615,6 @@ class ReachRateCalculatorWindow(QMainWindow):
             QMessageBox.warning(self, "File Not Found", "Output file not found.")
 
     def _back_to_menu(self):
-        """Return to Main Menu."""
         try:
             if getattr(sys, "frozen", False):
                 try:
@@ -546,21 +642,20 @@ class ReachRateCalculatorWindow(QMainWindow):
         _colors = {
             "INFO":    IBM["interactive"],
             "SUCCESS": IBM["success"],
-            "WARNING": IBM["warning"],
+            "WARNING": "#b45309",   # amber, readable on white
             "ERROR":   IBM["danger"],
-            "DEBUG":   "#8d8d8d",
         }
         _syms = {
             "INFO": "›", "SUCCESS": "✓", "WARNING": "⚠", "ERROR": "✗",
         }
         color  = _colors.get(level, IBM["text_primary"])
         sym    = _syms.get(level, "·")
-        bold   = level in ("WARNING", "ERROR")
-        weight = "font-weight:700;" if bold else ""
+        bold   = "font-weight:700;" if level in ("WARNING", "ERROR", "SUCCESS") else ""
 
         entry = (
-            f'<span style="color:#8d8d8d;">{ts}</span>'
-            f'&nbsp;<span style="color:{color};{weight}">{sym}&nbsp;{msg}</span>'
+            f'<span style="color:#8d8d8d;font-size:{SMALL}px;">[{ts}]</span>'
+            f'&nbsp;<span style="color:{color};{bold}font-size:{BASE}px;">'
+            f'{sym}&nbsp;{msg}</span>'
         )
         self._log_text.append(entry)
         sb = self._log_text.verticalScrollBar()
@@ -572,6 +667,9 @@ class ReachRateCalculatorWindow(QMainWindow):
 
 def main():
     app = QApplication.instance() or QApplication(sys.argv)
+    # Enable high-DPI scaling
+    app.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    app.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
     win = ReachRateCalculatorWindow()
     win.show()
     sys.exit(app.exec_())
