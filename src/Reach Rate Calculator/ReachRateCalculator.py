@@ -80,39 +80,42 @@ class ReachRateCalculator:
     def load_files(self, pa_path: str, sms_path: str, email_path: str, phone_path: str):
         """Load the 4 required Excel sheets into DataFrames."""
         self._log("Loading PA Cases sheet…")
-        self.pa_df = self._load_sheet(pa_path, sheet_hint="PA Cases")
+        self.pa_df = self._load_pa_sheet(pa_path)
         self._log(f"  ✓ PA Cases: {len(self.pa_df)} rows | {list(self.pa_df.columns[:5])}…", "SUCCESS")
 
         self._log("Loading SMS View sheet…")
-        self.sms_df = self._load_sheet(sms_path, sheet_hint="SMS")
+        self.sms_df = self._load_first_sheet(sms_path, "SMS")
         self._log(f"  ✓ SMS:      {len(self.sms_df)} rows", "SUCCESS")
 
         self._log("Loading Email View sheet…")
-        self.email_df = self._load_sheet(email_path, sheet_hint="Email")
+        self.email_df = self._load_first_sheet(email_path, "Email")
         self._log(f"  ✓ Email:    {len(self.email_df)} rows", "SUCCESS")
 
         self._log("Loading Phone Call View sheet…")
-        self.phone_df = self._load_sheet(phone_path, sheet_hint="Phone")
+        self.phone_df = self._load_first_sheet(phone_path, "Phone Call")
         self._log(f"  ✓ Phone:    {len(self.phone_df)} rows", "SUCCESS")
 
-    def _load_sheet(self, path: str, sheet_hint: str = "") -> pd.DataFrame:
+    def _load_first_sheet(self, path: str, label: str = "") -> pd.DataFrame:
+        """Always load the first (and usually only) sheet — used for channel view files."""
+        xl = pd.ExcelFile(path)
+        sheet = xl.sheet_names[0]
+        self._log(f"  → {label}: using sheet '{sheet}' from {os.path.basename(path)}")
+        return pd.read_excel(xl, sheet_name=sheet, dtype=str)
+
+    def _load_pa_sheet(self, path: str) -> pd.DataFrame:
         """
-        Try to load an Excel file.  If it has multiple sheets, pick the one
-        whose name best matches sheet_hint; otherwise load the first sheet.
+        Load the PA Cases workbook.  Looks for a sheet named 'PA Cases';
+        falls back to the first sheet if not found.
         """
         xl = pd.ExcelFile(path)
-        if len(xl.sheet_names) == 1:
-            return pd.read_excel(xl, sheet_name=xl.sheet_names[0], dtype=str)
-
-        # Find best matching sheet
-        hint_lower = sheet_hint.lower()
-        for name in xl.sheet_names:
-            if hint_lower in name.lower():
-                self._log(f"  → Using sheet '{name}' from {os.path.basename(path)}")
-                return pd.read_excel(xl, sheet_name=name, dtype=str)
-
-        self._log(f"  → No sheet matched '{sheet_hint}'; using first sheet '{xl.sheet_names[0]}'", "WARNING")
-        return pd.read_excel(xl, sheet_name=xl.sheet_names[0], dtype=str)
+        target = next((n for n in xl.sheet_names
+                       if "pa cases" in n.lower()), None)
+        if target:
+            self._log(f"  → PA Cases: using sheet '{target}' from {os.path.basename(path)}")
+        else:
+            target = xl.sheet_names[0]
+            self._log(f"  → 'PA Cases' sheet not found; using first sheet '{target}'", "WARNING")
+        return pd.read_excel(xl, sheet_name=target, dtype=str)
 
     # ── Core Processing ────────────────────────────────────────────────────────
 
@@ -141,7 +144,7 @@ class ReachRateCalculator:
         pa = self.pa_df.copy()
 
         # Identify key columns
-        col_case     = _find_col(pa, ["Case", "Case Number"])
+        col_case     = _find_col(pa, ["Case Number"])
         col_fa       = _find_col(pa, ["Final Action"])
         col_wot      = _find_col(pa, ["Work Order Type"])
         col_channel  = _find_col(pa, ["Incoming Channel"])
@@ -343,33 +346,80 @@ class ReachRateCalculator:
 
     def _write_excel(self, output_path: str, total_df: pd.DataFrame,
                      metrics: dict, pa: pd.DataFrame, col_fa: str):
-        workbook  = xlsxwriter.Workbook(output_path)
+        workbook = xlsxwriter.Workbook(output_path)
 
-        # ── Formats ────────────────────────────────────────────────────────────
-        fmt_title  = workbook.add_format({"bold": True, "font_size": 14,
-                                           "font_color": "#0f62fe", "font_name": "IBM Plex Sans"})
-        fmt_header = workbook.add_format({"bold": True, "bg_color": "#0f62fe",
-                                           "font_color": "#ffffff", "border": 1,
-                                           "font_name": "IBM Plex Sans", "text_wrap": True})
-        fmt_row    = workbook.add_format({"border": 1, "font_name": "IBM Plex Sans"})
-        fmt_row_alt= workbook.add_format({"border": 1, "bg_color": "#f4f4f4",
-                                           "font_name": "IBM Plex Sans"})
-        fmt_pct    = workbook.add_format({"border": 1, "num_format": "0.0%",
-                                           "font_name": "IBM Plex Sans"})
+        # ── Shared Formats ─────────────────────────────────────────────────────
+        fmt_title      = workbook.add_format({"bold": True, "font_size": 14,
+                                               "font_color": "#0f62fe",
+                                               "font_name": "IBM Plex Sans"})
+        fmt_header     = workbook.add_format({"bold": True, "bg_color": "#0f62fe",
+                                               "font_color": "#ffffff", "border": 1,
+                                               "font_name": "IBM Plex Sans",
+                                               "text_wrap": True, "valign": "vcenter"})
+        fmt_row        = workbook.add_format({"border": 1, "font_name": "IBM Plex Sans"})
+        fmt_row_alt    = workbook.add_format({"border": 1, "bg_color": "#f4f4f4",
+                                               "font_name": "IBM Plex Sans"})
         fmt_reached    = workbook.add_format({"border": 1, "bg_color": "#defbe6",
                                                "font_color": "#198038", "bold": True,
                                                "font_name": "IBM Plex Sans"})
         fmt_notreached = workbook.add_format({"border": 1, "bg_color": "#fff1f1",
                                                "font_color": "#da1e28", "bold": True,
                                                "font_name": "IBM Plex Sans"})
-        fmt_section = workbook.add_format({"bold": True, "font_size": 11,
-                                            "font_color": "#161616",
-                                            "font_name": "IBM Plex Sans",
-                                            "bottom": 2, "bottom_color": "#0f62fe"})
-        fmt_number = workbook.add_format({"border": 1, "num_format": "#,##0",
-                                           "font_name": "IBM Plex Sans"})
+        fmt_section    = workbook.add_format({"bold": True, "font_size": 12,
+                                               "font_color": "#0f62fe",
+                                               "font_name": "IBM Plex Sans",
+                                               "bottom": 2, "bottom_color": "#0f62fe"})
+        fmt_sub        = workbook.add_format({"bold": True, "font_size": 10,
+                                               "font_color": "#525252",
+                                               "font_name": "IBM Plex Sans",
+                                               "italic": True})
 
-        # ── Total Cases Sheet ──────────────────────────────────────────────────
+        # ── Helpers ────────────────────────────────────────────────────────────
+        def _setup_metrics_sheet(ws):
+            ws.set_zoom(90)
+            ws.set_column("A:A", 30)
+            ws.set_column("B:B", 12)
+            ws.set_column("C:C", 16)
+            ws.set_column("D:Z", 14)
+
+        def _write_table(ws, df: pd.DataFrame, start_row: int):
+            """Write table headers+data to ws starting at start_row. Returns (data_start, data_end)."""
+            hdrs = list(df.columns)
+            for ci, h in enumerate(hdrs):
+                ws.write(start_row, ci, h, fmt_header)
+            data_start = start_row + 1
+            for ri, row in df.iterrows():
+                r_idx = start_row + 1 + list(df.index).index(ri)
+                for ci, h in enumerate(hdrs):
+                    val = row[h]
+                    if pd.isna(val):
+                        val = ""
+                    if isinstance(val, float):
+                        ws.write(r_idx, ci, val, fmt_row)
+                    else:
+                        ws.write(r_idx, ci, str(val), fmt_row)
+            data_end = start_row + len(df)
+            return data_start, data_end
+
+        def _add_chart(ws, label_col, value_col, data_start, data_end,
+                       title, chart_row, chart_col=4, chart_type="bar"):
+            chart = workbook.add_chart({"type": chart_type})
+            chart.add_series({
+                "name":        title,
+                "categories":  [ws.name, data_start, label_col, data_end, label_col],
+                "values":      [ws.name, data_start, value_col, data_end, value_col],
+                "data_labels": {"value": True},
+            })
+            chart.set_title({"name": title,
+                             "name_font": {"name": "IBM Plex Sans", "bold": True}})
+            chart.set_chartarea({"border": {"color": "#e0e0e0"}})
+            chart.set_plotarea({"border":  {"color": "#e0e0e0"}})
+            chart.set_size({"width": 500, "height": 260})
+            ws.insert_chart(chart_row, chart_col, chart)
+
+        # ==================================================================
+        # Sheet 1 — Total Cases
+        # ==================================================================
         ws_total = workbook.add_worksheet("Total Cases")
         ws_total.set_zoom(90)
         ws_total.freeze_panes(1, 0)
@@ -387,7 +437,7 @@ class ReachRateCalculator:
 
         for ri, row_data in total_df.iterrows():
             row_idx = list(total_df.index).index(ri) + 1
-            fmt_base = fmt_row_alt if row_idx % 2 == 0 else fmt_row
+            fmt_base  = fmt_row_alt if row_idx % 2 == 0 else fmt_row
             reach_val = str(row_data.get("Reach Status", ""))
             for ci, c in enumerate(cols):
                 val = row_data[c]
@@ -402,120 +452,94 @@ class ReachRateCalculator:
                 else:
                     ws_total.write(row_idx, ci, val, fmt_base)
 
-        # ── Metrics Sheet ──────────────────────────────────────────────────────
-        ws_m = workbook.add_worksheet("Metrics")
-        ws_m.set_zoom(90)
-        ws_m.set_column("A:A", 28)
-        ws_m.set_column("B:B", 12)
-        ws_m.set_column("C:C", 16)
-        ws_m.set_column("D:Z", 14)
+        self._log("  Written: Total Cases sheet")
 
-        cur_row = 0
+        # ==================================================================
+        # Sheet 2 — Overall Summary
+        # ==================================================================
+        ws_ov = workbook.add_worksheet("Overall Summary")
+        _setup_metrics_sheet(ws_ov)
+        r = 0
+        ws_ov.write(r, 0, "Reach Rate Calculator — Overall Summary", fmt_title)
+        r += 2
 
-        def write_section(title: str) -> int:
-            nonlocal cur_row
-            ws_m.write(cur_row, 0, title, fmt_section)
-            cur_row += 1
-            return cur_row
-
-        def write_table(df: pd.DataFrame, chart_type="bar") -> int:
-            nonlocal cur_row
-            hdrs = list(df.columns)
-            for ci, h in enumerate(hdrs):
-                ws_m.write(cur_row, ci, h, fmt_header)
-            data_start = cur_row + 1
-            for ri, row in df.iterrows():
-                r_idx = cur_row + 1 + list(df.index).index(ri)
-                for ci, h in enumerate(hdrs):
-                    val = row[h]
-                    if pd.isna(val):
-                        val = ""
-                    if isinstance(val, float):
-                        ws_m.write(r_idx, ci, val, fmt_row)
-                    else:
-                        ws_m.write(r_idx, ci, str(val), fmt_row)
-            data_end = cur_row + len(df)
-            cur_row = data_end + 2
-            return data_start, data_end
-
-        def add_chart(label_col: int, value_col: int, data_start: int, data_end: int,
-                      title: str, chart_row: int, chart_col_x: int = 4, chart_type: str = "bar"):
-            chart = workbook.add_chart({"type": chart_type})
-            chart.add_series({
-                "name":       title,
-                "categories": [ws_m.name, data_start, label_col, data_end, label_col],
-                "values":     [ws_m.name, data_start, value_col, data_end, value_col],
-                "data_labels": {"value": True},
-            })
-            chart.set_title({"name": title, "name_font": {"name": "IBM Plex Sans", "bold": True}})
-            chart.set_chartarea({"border": {"color": "#e0e0e0"}})
-            chart.set_plotarea({"border": {"color": "#e0e0e0"}})
-            chart.set_size({"width": 480, "height": 240})
-            ws_m.insert_chart(chart_row, chart_col_x, chart)
-
-        # ── 1. Overall Summary ─────────────────────────────────────────────────
-        ws_m.write(cur_row, 0, "Reach Rate Calculator — Metrics Overview", fmt_title)
-        cur_row += 2
-
-        write_section("1. Overall Reach Rate")
+        # Overall reach rate table + pie chart
+        ws_ov.write(r, 0, "Overall Reach Rate", fmt_section)
+        r += 1
         reach_df = metrics.get("overall_reach")
         if reach_df is not None:
-            tbl_chart_row = cur_row
-            ds, de = write_table(reach_df, chart_type="pie")
-            add_chart(label_col=0, value_col=1, data_start=ds-1+1, data_end=de,
-                      title="Overall Reach Rate", chart_row=tbl_chart_row, chart_type="pie")
-        cur_row += 3
+            tbl_r = r
+            ds, de = _write_table(ws_ov, reach_df, r)
+            r = de + 2
+            _add_chart(ws_ov, 0, 1, ds, de, "Overall Reach Rate",
+                       chart_row=tbl_r, chart_col=4, chart_type="pie")
+            r = max(r, tbl_r + 14)  # leave room for chart
 
-        # ── 2. Final Action Distribution (all cases) ───────────────────────────
-        write_section("2. Final Action Distribution (All Cases)")
+        # Overall final action distribution table + bar chart
+        ws_ov.write(r, 0, "Final Action Distribution (All Cases)", fmt_section)
+        r += 1
         fa_df = metrics.get("final_action_all")
         if fa_df is not None:
-            tbl_chart_row = cur_row
-            ds, de = write_table(fa_df, chart_type="bar")
-            add_chart(label_col=0, value_col=1, data_start=ds-1+1, data_end=de,
-                      title="Final Action Distribution", chart_row=tbl_chart_row, chart_type="bar")
-        cur_row += 3
+            tbl_r = r
+            ds, de = _write_table(ws_ov, fa_df, r)
+            r = de + 2
+            _add_chart(ws_ov, 0, 1, ds, de, "Final Action Distribution",
+                       chart_row=tbl_r, chart_col=4, chart_type="bar")
 
-        # ── 3. Per-Channel Sections ────────────────────────────────────────────
+        self._log("  Written: Overall Summary sheet")
+
+        # ==================================================================
+        # Sheets 3–6 — Per-channel metric sheets
+        # ==================================================================
         channel_tags = [
-            ("SMS",           "sms"),
-            ("Email",          "email"),
-            ("Confirmed Call", "confirmed_call"),
-            ("Expected Call",  "expected_call"),
+            ("SMS",           "sms",           "SMS Channel"),
+            ("Email",          "email",          "Email Channel"),
+            ("Confirmed Call", "confirmed_call", "Confirmed Call Channel"),
+            ("Expected Call",  "expected_call",  "Expected Call Channel"),
         ]
 
-        for ch_label, ch_key in channel_tags:
+        for ch_label, ch_key, sheet_name in channel_tags:
             fa_key    = f"{ch_key}_fa"
             reach_key = f"{ch_key}_reach"
             tot_key   = f"{ch_key}_total"
 
             if fa_key not in metrics:
+                self._log(f"  Skipping {ch_label} (no data found)")
                 continue
 
             total_ch = metrics.get(tot_key, 0)
-            write_section(f"3. {ch_label} Channel  ({total_ch} cases)")
+            ws_ch = workbook.add_worksheet(sheet_name)
+            _setup_metrics_sheet(ws_ch)
+            r = 0
 
-            # Final action sub-table
-            ws_m.write(cur_row, 0, "Final Action Breakdown", fmt_section)
-            cur_row += 1
+            # Sheet title
+            ws_ch.write(r, 0,
+                        f"{ch_label}  —  {total_ch} cases", fmt_title)
+            r += 2
+
+            # ── Final Action Breakdown ─────────────────────────────────────
+            ws_ch.write(r, 0, "Final Action Breakdown", fmt_section)
+            r += 1
             ch_fa_df = metrics[fa_key]
-            tbl_chart_row = cur_row
-            ds, de = write_table(ch_fa_df)
-            add_chart(label_col=0, value_col=1, data_start=ds-1+1, data_end=de,
-                      title=f"{ch_label} — Final Actions", chart_row=tbl_chart_row,
-                      chart_col_x=4, chart_type="bar")
-            cur_row += 2
+            tbl_r = r
+            ds, de = _write_table(ws_ch, ch_fa_df, r)
+            r = de + 2
+            _add_chart(ws_ch, 0, 1, ds, de,
+                       f"{ch_label} — Final Actions",
+                       chart_row=tbl_r, chart_col=4, chart_type="bar")
+            r = max(r, tbl_r + 15)  # leave room for chart
 
-            # Reach rate sub-table
-            ws_m.write(cur_row, 0, "Reach Rate", fmt_section)
-            cur_row += 1
+            # ── Reach Rate ─────────────────────────────────────────────────
+            ws_ch.write(r, 0, "Reach Rate", fmt_section)
+            r += 1
             ch_reach_df = metrics[reach_key]
-            tbl_chart_row = cur_row
-            ds, de = write_table(ch_reach_df)
-            add_chart(label_col=0, value_col=1, data_start=ds-1+1, data_end=de,
-                      title=f"{ch_label} — Reach Rate", chart_row=tbl_chart_row,
-                      chart_col_x=4, chart_type="pie")
-            cur_row += 5
+            tbl_r = r
+            ds, de = _write_table(ws_ch, ch_reach_df, r)
+            _add_chart(ws_ch, 0, 1, ds, de,
+                       f"{ch_label} — Reach Rate",
+                       chart_row=tbl_r, chart_col=4, chart_type="pie")
+
+            self._log(f"  Written: {sheet_name} sheet ({total_ch} cases)")
 
         workbook.close()
         self._log(f"Output saved → {output_path}", "SUCCESS")
