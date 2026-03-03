@@ -194,12 +194,15 @@ class ReachRateCalculator:
 
         matching_channel_list = []
         reach_status_list     = []
-        final_actions_norm    = []
 
         for _, row in pa.iterrows():
             case_num = row["__case_num"]
-            fa_raw   = str(row.get(col_fa, "")).strip()
-            fa_norm  = fa_raw.lower()
+
+            # ── NaN-safe Final Action read ─────────────────────────────────────
+            fa_val  = row.get(col_fa)
+            fa_raw  = "" if (fa_val is None or (isinstance(fa_val, float) and pd.isna(fa_val)))\
+                      else str(fa_val).strip()
+            fa_norm = fa_raw.lower()
 
             # Channel matching
             in_sms   = case_num in sms_cases
@@ -212,7 +215,6 @@ class ReachRateCalculator:
             if in_phone: channels.append("Confirmed Call")
 
             if not channels:
-                # Determine if it was expected via phone based on Final Action
                 if fa_norm in REACHED_ACTIONS:
                     channels = ["Expected Call"]
                 else:
@@ -227,8 +229,6 @@ class ReachRateCalculator:
                 reach_status_list.append("Not Reached")
             else:
                 reach_status_list.append("Unknown")
-
-            final_actions_norm.append(fa_raw)
 
         pa["Matching Channel"] = matching_channel_list
         pa["Reach Status"]     = reach_status_list
@@ -290,55 +290,97 @@ class ReachRateCalculator:
         return set(df[col].apply(_normalize_case_num).dropna())
 
     def _compute_metrics(self, pa: pd.DataFrame, col_fa: str) -> dict:
-        """Return a dict of metric DataFrames for the Metrics sheet."""
-        metrics = {}
+        """Return a dict of metric DataFrames."""
+        metrics  = {}
+        total_all = len(pa)
 
         # ── Overall Reach Rate ─────────────────────────────────────────────────
         reach_counts = pa["Reach Status"].value_counts().reindex(
             ["Reached", "Not Reached", "Unknown"], fill_value=0
         )
-        total = reach_counts.sum()
-        reach_pct = (reach_counts / total * 100).round(1) if total > 0 else reach_counts
+        reach_pct = (reach_counts / total_all * 100).round(1) if total_all > 0 else reach_counts
         metrics["overall_reach"] = pd.DataFrame({
-            "Status": reach_counts.index,
-            "Count":  reach_counts.values,
-            "Percentage (%)": reach_pct.values,
+            "Status":         reach_counts.index,
+            "Count":          reach_counts.values,
+            "% of All Cases": reach_pct.values,
         })
+        metrics["total_all"] = total_all
 
-        # ── Final Action distribution (all) ───────────────────────────────────
-        fa_counts = pa[col_fa].fillna("(blank)").value_counts().reset_index()
+        # ── Final Action distribution (all cases) ──────────────────────────────
+        fa_filled = pa[col_fa].fillna("").apply(
+            lambda v: "" if (isinstance(v, float) and pd.isna(v)) else str(v).strip()
+        ).replace("", "(blank)")
+        fa_counts  = fa_filled.value_counts().reset_index()
         fa_counts.columns = ["Final Action", "Count"]
-        fa_counts["Percentage (%)"] = (fa_counts["Count"] / total * 100).round(1) if total > 0 else 0
+        fa_counts["% of All Cases"] = (
+            fa_counts["Count"] / total_all * 100
+        ).round(1) if total_all > 0 else 0
         metrics["final_action_all"] = fa_counts
 
-        # ── Per-channel metrics ────────────────────────────────────────────────
-        channel_tags = ["SMS", "Email", "Confirmed Call", "Expected Call"]
-        for ch in channel_tags:
-            mask = pa["Matching Channel"].str.contains(ch, case=False, na=False)
-            sub  = pa[mask]
+        # ── Channel Summary: cross-channel comparison ──────────────────────────
+        summary_rows = []
+        for ch in ["SMS", "Email", "Confirmed Call", "Expected Call", "Not Found"]:
+            mask     = pa["Matching Channel"].str.contains(ch, case=False, na=False)
+            sub      = pa[mask]
+            ch_total = len(sub)
+            if ch_total == 0:
+                continue
+            ch_reached     = int((sub["Reach Status"] == "Reached").sum())
+            ch_not_reached = int((sub["Reach Status"] == "Not Reached").sum())
+            ch_unknown     = ch_total - ch_reached - ch_not_reached
+            reach_rate     = round(ch_reached / ch_total * 100, 1)
+            summary_rows.append({
+                "Channel":         ch,
+                "Cases":           ch_total,
+                "% of All Cases":  round(ch_total / total_all * 100, 1) if total_all > 0 else 0,
+                "Reached":         ch_reached,
+                "% Reached":       round(ch_reached     / ch_total * 100, 1),
+                "Not Reached":     ch_not_reached,
+                "% Not Reached":   round(ch_not_reached / ch_total * 100, 1),
+                "Unknown":         ch_unknown,
+                "Reach Rate (%)":  reach_rate,
+            })
+        metrics["channel_summary"] = (
+            pd.DataFrame(summary_rows) if summary_rows else pd.DataFrame()
+        )
+
+        # ── Per-channel detail metrics ─────────────────────────────────────────
+        for ch in ["SMS", "Email", "Confirmed Call", "Expected Call"]:
+            mask  = pa["Matching Channel"].str.contains(ch, case=False, na=False)
+            sub   = pa[mask]
             if len(sub) == 0:
                 continue
 
-            # Final action breakdown for this channel
-            ch_fa = sub[col_fa].fillna("(blank)").value_counts().reset_index()
-            ch_fa.columns = ["Final Action", "Count"]
             sub_total = len(sub)
-            ch_fa["Percentage (%)"] = (ch_fa["Count"] / sub_total * 100).round(1)
 
-            # Reach rate for this channel
-            ch_reach = sub["Reach Status"].value_counts().reindex(
-                ["Reached", "Not Reached", "Unknown"], fill_value=0
-            )
+            # Final action breakdown (count + % within channel + % of all cases)
+            ch_fa = fa_filled[mask].value_counts().reset_index()
+            ch_fa.columns = ["Final Action", "Count"]
+            ch_fa["% within Channel"] = (ch_fa["Count"] / sub_total  * 100).round(1)
+            ch_fa["% of All Cases"]   = (ch_fa["Count"] / total_all  * 100).round(1) if total_all > 0 else 0
+
+            # Reach rate (count + % within channel + % of all cases)
+            ch_reached     = int((sub["Reach Status"] == "Reached").sum())
+            ch_not_reached = int((sub["Reach Status"] == "Not Reached").sum())
+            ch_unknown     = sub_total - ch_reached - ch_not_reached
+
+            def _pct(n, d):  return round(n / d * 100, 1) if d > 0 else 0
+
             ch_reach_df = pd.DataFrame({
-                "Status": ch_reach.index,
-                "Count":  ch_reach.values,
-                "Percentage (%)": (ch_reach / sub_total * 100).round(1).values,
+                "Status":            ["Reached",    "Not Reached",    "Unknown"],
+                "Count":             [ch_reached,    ch_not_reached,   ch_unknown],
+                "% within Channel": [_pct(ch_reached, sub_total),
+                                      _pct(ch_not_reached, sub_total),
+                                      _pct(ch_unknown, sub_total)],
+                "% of All Cases":   [_pct(ch_reached, total_all),
+                                      _pct(ch_not_reached, total_all),
+                                      _pct(ch_unknown, total_all)],
             })
 
             key = ch.lower().replace(" ", "_")
-            metrics[f"{key}_total"]   = sub_total
-            metrics[f"{key}_fa"]      = ch_fa
-            metrics[f"{key}_reach"]   = ch_reach_df
+            metrics[f"{key}_total"] = sub_total
+            metrics[f"{key}_fa"]    = ch_fa
+            metrics[f"{key}_reach"] = ch_reach_df
 
         return metrics
 
@@ -459,12 +501,30 @@ class ReachRateCalculator:
         # ==================================================================
         ws_ov = workbook.add_worksheet("Overall Summary")
         _setup_metrics_sheet(ws_ov)
+        # Wider columns for the bigger tables
+        ws_ov.set_column("A:A", 22)
+        ws_ov.set_column("B:J", 16)
         r = 0
-        ws_ov.write(r, 0, "Reach Rate Calculator — Overall Summary", fmt_title)
+        total_all = metrics.get("total_all", 0)
+        ws_ov.write(r, 0, f"Reach Rate Calculator — Overall Summary  ({total_all} total cases)", fmt_title)
         r += 2
 
-        # Overall reach rate table + pie chart
-        ws_ov.write(r, 0, "Overall Reach Rate", fmt_section)
+        # ── Channel Comparison table (core ask) ──────────────────────────────
+        ws_ov.write(r, 0, "Channel Reach Rate Comparison", fmt_section)
+        r += 1
+        ch_sum_df = metrics.get("channel_summary")
+        if ch_sum_df is not None and len(ch_sum_df) > 0:
+            tbl_r = r
+            ds, de = _write_table(ws_ov, ch_sum_df, r)
+            r = de + 2
+            # Bar chart: reach rate (%) per channel
+            _add_chart(ws_ov, 0, 8, ds, de,   # col 8 = "Reach Rate (%)"
+                       "Reach Rate (%) by Channel",
+                       chart_row=tbl_r, chart_col=10, chart_type="bar")
+            r = max(r, tbl_r + 16)
+
+        # ── Overall reach rate table + pie chart ────────────────────────────
+        ws_ov.write(r, 0, "Overall Reach Rate (all channels)", fmt_section)
         r += 1
         reach_df = metrics.get("overall_reach")
         if reach_df is not None:
@@ -473,9 +533,9 @@ class ReachRateCalculator:
             r = de + 2
             _add_chart(ws_ov, 0, 1, ds, de, "Overall Reach Rate",
                        chart_row=tbl_r, chart_col=4, chart_type="pie")
-            r = max(r, tbl_r + 14)  # leave room for chart
+            r = max(r, tbl_r + 14)
 
-        # Overall final action distribution table + bar chart
+        # ── Final action distribution + bar chart ────────────────────────────
         ws_ov.write(r, 0, "Final Action Distribution (All Cases)", fmt_section)
         r += 1
         fa_df = metrics.get("final_action_all")
@@ -507,14 +567,17 @@ class ReachRateCalculator:
                 self._log(f"  Skipping {ch_label} (no data found)")
                 continue
 
-            total_ch = metrics.get(tot_key, 0)
+            total_ch  = metrics.get(tot_key, 0)
+            pct_of_all = round(total_ch / total_all * 100, 1) if total_all > 0 else 0
             ws_ch = workbook.add_worksheet(sheet_name)
             _setup_metrics_sheet(ws_ch)
+            # Wider columns for the extra metric columns
+            ws_ch.set_column("A:A", 22)
+            ws_ch.set_column("B:E", 18)
             r = 0
 
-            # Sheet title
             ws_ch.write(r, 0,
-                        f"{ch_label}  —  {total_ch} cases", fmt_title)
+                        f"{ch_label}  —  {total_ch} cases  ({pct_of_all}% of all cases)", fmt_title)
             r += 2
 
             # ── Final Action Breakdown ─────────────────────────────────────

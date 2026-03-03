@@ -125,4 +125,3 @@ Column in Email View:
     Entered Queue
 Column in Phone Call View:
     Date Created
-    
