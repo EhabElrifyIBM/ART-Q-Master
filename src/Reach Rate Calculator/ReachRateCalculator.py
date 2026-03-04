@@ -19,12 +19,12 @@ from typing import Optional, Callable
 # ── Constants ──────────────────────────────────────────────────────────────────
 
 REACHED_ACTIONS = {
-    "fixed", "issue not fixed", "not yet tested", "escalation", "dnd",
+    "fixed", "issue not fixed", "not yet tested", "escalation",
     "not yet tested"
 }
 NOT_REACHED_ACTIONS = {
     "sent sms", "sent email", "left vm", "reviewed",
-    "bank/sutherland", "not reached"
+    "bank/sutherland", "not reached" , "dnd"
 }
 
 ALL_FINAL_ACTIONS = [

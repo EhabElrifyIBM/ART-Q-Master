@@ -125,3 +125,43 @@ Column in Email View:
     Entered Queue
 Column in Phone Call View:
     Date Created
+
+
+Metrics Update
+
+When adding metrics 
+Monthly breakdown is missing from the output might be broken in the code. Make sure the add the monthly breakdown as requested and referenced in the attached picture (percentage calculated is the number over the GT (Grand total))
+I want several breakdowns 
+
+Breakdown 1: Total Numbers
+Month    | SMS                | Emails                 | Calls (expected + confirmed)  | Grand Total 
+Month 1 | No. of matching SMS | No. of matching emails | No. of total calls            | Grand Total of cases on Month
+Month 2 | No. of matching SMS | No. of matching emails | No. of total calls            | Grand Total of cases on Month
+..
+..
+GT      | GT of SMS           | GT of Emails           | GT of Calls                   | Grand Total of months
+
+Breakdown 2: Reached vs Not Reached
+Month    | SMS reached | SMS not reached || Emails reached | Emails not reached || Calls (expected + confirmed) reached | calls not reached || Grand Total 
+Month 1 | No. of matching SMS reached | SMS not reached || No. of matching emails reached | emails not reached  || No. of total calls reached | not reached  || Grand Total of cases on Month
+Month 2 | No. of matching SMS reached | SMS not reached || No. of matching emails reached | emails not reached || No. of total calls reached | not reached || Grand Total of cases on Month
+..
+..
+GT      | GT of SMS           | GT of Emails           | GT of Calls                   | Grand Total of months
+
+Breakdown 3: Each Channel reach rate
+Month    | SMS reached        | Emails  reached        | Calls (expected + confirmed) reached | Grand Total 
+Month 1  | No. of matching SMS| No. of matching emails | No. of total calls                   | Grand Total of reached cases on Month
+Month 2 | No. of matching SMS | No. of matching emails | No. of total calls                   | Grand Total of reached cases on Month
+..
+..
+GT      | GT of SMS           | GT of Emails           | GT of Calls                   | Grand Total of months
+
+Breakdown 4: Work Order Type reach channels
+The same table for each Work Order Type (Onsite - Depot - CRU)
+Month   | SMS reached        | Emails  reached        | Calls (expected + confirmed) reached | Grand Total 
+Month 1 | No. of matching SMS| No. of matching emails | No. of total calls                   | Grand Total of reached cases on Month
+Month 2 | No. of matching SMS| No. of matching emails| No. of total calls                    | Grand Total of reached cases on Month
+..
+..
+GT      | GT of SMS           | GT of Emails           | GT of Calls                   | Grand Total of months
