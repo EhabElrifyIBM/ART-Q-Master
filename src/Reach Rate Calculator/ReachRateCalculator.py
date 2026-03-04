@@ -690,12 +690,148 @@ class ReachRateCalculator:
             self._log("  Skipping Monthly Breakdown (no date data)")
             return
 
-        ch_cols  = metrics.get("monthly_ch_cols", [])  # [(tag, label), …]
+        ch_cols = metrics.get("monthly_ch_cols", [])  # [(tag, label), …]
         ws = workbook.add_worksheet("Monthly Breakdown")
         ws.set_zoom(90)
-        ws.set_column(0, 0, 18)  # Month
-        ws.set_column(1, 20, 14)
-        self._log("  Written: Monthly Breakdown sheet")
+        ws.freeze_panes(3, 0)  # freeze below double-header rows
+
+        # ── Column widths ──────────────────────────────────────────────────────
+        ws.set_column(0, 0, 16)    # Month
+        # Each channel has 2 sub-cols (Count + Reach%), then GT
+        #  col 1,2 = Emails count/%  |  3,4 = SMS count/%  |  5,6 = Calls count/%  |  7 = GT
+        ws.set_column(1, 6, 12)
+        ws.set_column(7, 7, 13)    # Grand Total
+
+        total_all = metrics.get("total_all", 0)
+
+        # ── Shared sub-formats ─────────────────────────────────────────────────
+        ch_bg = {
+            "Emails": "#0043ce",   # IBM Blue 70
+            "SMS":    "#da1e28",   # IBM Red 60  (warm contrast)
+            "Calls":  "#198038",   # IBM Green 60
+        }
+        fmt_gt_label = workbook.add_format({
+            "bold": True, "border": 1, "font_size": 11,
+            "font_name": "IBM Plex Sans", "bg_color": "#e8daff",
+        })
+        fmt_gt_num = workbook.add_format({
+            "bold": True, "border": 1, "font_size": 11,
+            "font_name": "IBM Plex Sans", "bg_color": "#e8daff", "num_format": "0",
+        })
+        fmt_gt_pct = workbook.add_format({
+            "bold": True, "border": 1, "font_size": 11,
+            "font_name": "IBM Plex Sans", "bg_color": "#e8daff",
+            "font_color": "#0043ce", "num_format": "0\"%\"",
+        })
+        fmt_gt_total = workbook.add_format({
+            "bold": True, "border": 1, "font_size": 11,
+            "font_name": "IBM Plex Sans", "bg_color": "#a56eff",
+            "font_color": "#ffffff", "num_format": "0",
+        })
+        fmt_num = workbook.add_format({
+            "border": 1, "font_name": "IBM Plex Sans", "num_format": "0",
+        })
+        fmt_num_alt = workbook.add_format({
+            "border": 1, "font_name": "IBM Plex Sans",
+            "bg_color": "#f4f4f4", "num_format": "0",
+        })
+        fmt_pct = workbook.add_format({
+            "border": 1, "font_name": "IBM Plex Sans",
+            "font_color": "#0043ce", "bold": True, "num_format": "0\"%\"",
+        })
+        fmt_pct_alt = workbook.add_format({
+            "border": 1, "font_name": "IBM Plex Sans",
+            "bg_color": "#f4f4f4", "font_color": "#0043ce",
+            "bold": True, "num_format": "0\"%\"",
+        })
+        fmt_gt_col = workbook.add_format({
+            "border": 1, "font_name": "IBM Plex Sans",
+            "bg_color": "#d0e2ff", "bold": True, "num_format": "0",
+        })
+        fmt_gt_col_alt = workbook.add_format({
+            "border": 1, "font_name": "IBM Plex Sans",
+            "bg_color": "#c0d6f4", "bold": True, "num_format": "0",
+        })
+
+        # ── Row 0: title ───────────────────────────────────────────────────────
+        ws.set_row(0, 24)
+        ws.write(0, 0, "Reach Rate Breakdown by Communication Channel", fmt_title)
+
+        # ── Row 1: channel group headers (merged 2 cols each) ──────────────────
+        ws.set_row(1, 22)
+        ws.write(1, 0, "", fmt_header)          # Month label cell
+        col = 1
+        for _tag, label in ch_cols:
+            bg = ch_bg.get(label, "#0f62fe")
+            f  = workbook.add_format({
+                "bold": True, "align": "center", "valign": "vcenter",
+                "border": 1, "font_name": "IBM Plex Sans", "font_size": 11,
+                "bg_color": bg, "font_color": "#ffffff",
+            })
+            ws.merge_range(1, col, 1, col + 1, label, f)
+            col += 2
+        # Grand Total header
+        fmt_gt_hdr = workbook.add_format({
+            "bold": True, "align": "center", "valign": "vcenter",
+            "border": 1, "font_name": "IBM Plex Sans",
+            "bg_color": "#6929c4", "font_color": "#ffffff",
+        })
+        ws.write(1, col, "GT", fmt_gt_hdr)
+
+        # ── Row 2: sub-column headers ──────────────────────────────────────────
+        ws.set_row(2, 20)
+        ws.write(2, 0, "Month", fmt_header)
+        col = 1
+        for _tag, label in ch_cols:
+            ws.write(2, col,     "Count",   fmt_header)
+            ws.write(2, col + 1, "Reach %", fmt_header)
+            col += 2
+        ws.write(2, col, "Total", fmt_header)
+
+        # ── Data rows: all months (last row in pivot_rows is Grand Total) ──────
+        data_rows = pivot_df.to_dict(orient="records")
+
+        # separate grand total row if it exists
+        normal_rows = [r for r in data_rows if r.get("Month") != "Grand Total"]
+        gt_rows     = [r for r in data_rows if r.get("Month") == "Grand Total"]
+
+        for ri, row in enumerate(normal_rows):
+            r_idx    = ri + 3
+            is_alt   = ri % 2 == 1
+            f_label  = fmt_row_alt if is_alt else fmt_row
+            f_num    = fmt_num_alt if is_alt else fmt_num
+            f_pct    = fmt_pct_alt if is_alt else fmt_pct
+            f_gt_col = fmt_gt_col_alt if is_alt else fmt_gt_col
+
+            ws.set_row(r_idx, 18)
+            ws.write(r_idx, 0, str(row.get("Month", "")), f_label)
+            col = 1
+            for _tag, label in ch_cols:
+                count = row.get(f"{label}_Count", 0) or 0
+                pct   = row.get(f"{label}_Reach%", 0) or 0
+                ws.write_number(r_idx, col,     int(count), f_num)
+                ws.write_number(r_idx, col + 1, float(pct),  f_pct)
+                col += 2
+            gt_val = row.get("Grand Total", 0) or 0
+            ws.write_number(r_idx, col, int(gt_val), f_gt_col)
+
+        # ── Grand Total row ────────────────────────────────────────────────────
+        if gt_rows:
+            gr     = gt_rows[0]
+            r_idx  = len(normal_rows) + 3
+            ws.set_row(r_idx, 20)
+            ws.write(r_idx, 0, "Grand Total", fmt_gt_label)
+            col = 1
+            for _tag, label in ch_cols:
+                count = gr.get(f"{label}_Count", 0) or 0
+                pct   = gr.get(f"{label}_Reach%", 0) or 0
+                ws.write_number(r_idx, col,     int(count),   fmt_gt_num)
+                ws.write_number(r_idx, col + 1, float(pct),   fmt_gt_pct)
+                col += 2
+            gt_val = gr.get("Grand Total", 0) or 0
+            ws.write_number(r_idx, col, int(gt_val), fmt_gt_total)
+
+        self._log(f"  Written: Monthly Breakdown sheet ({len(normal_rows)} months)")
 
     def _add_wot_sheet(self, workbook, metrics: dict,
                         fmt_title, fmt_header, fmt_row, fmt_row_alt, fmt_section):
