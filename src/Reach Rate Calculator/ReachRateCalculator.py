@@ -365,52 +365,131 @@ class ReachRateCalculator:
             pd.DataFrame(summary_rows) if summary_rows else pd.DataFrame()
         )
 
-        # ── Monthly × Channel pivot (reference chart format) ───────────────────
-        # Rows = months, Columns = Email / SMS / Calls  (count + reach %),  GT
+        # ── Monthly breakdowns ─────────────────────────────────────────────---
         if col_date:
             pa["__month_period"] = pd.to_datetime(pa[col_date], errors="coerce").dt.to_period("M")
             months = sorted(pa["__month_period"].dropna().unique())
-            ch_cols = [
-                ("Email",          "Emails"),
-                ("SMS",            "SMS"),
-                ("Confirmed Call", "Calls"),
-            ]
-            pivot_rows = []
+            # Helper to get mask for channel (calls = confirmed+expected)
+            def ch_mask(df, ch):
+                if ch == "Calls":
+                    return df["Matching Channel"].str.contains("Confirmed Call|Expected Call", case=False, na=False)
+                return df["Matching Channel"].str.contains(ch, case=False, na=False)
+
+            # Breakdown 1: Total Numbers
+            breakdown1 = []
             for period in months:
                 m_mask = pa["__month_period"] == period
                 m_sub  = pa[m_mask]
-                row    = {"Month": period.strftime("%B %Y")}
-                gt     = 0
-                for ch_tag, col_name in ch_cols:
-                    ch_mask  = m_sub["Matching Channel"].str.contains(ch_tag, case=False, na=False)
-                    ch_sub   = m_sub[ch_mask]
-                    count    = len(ch_sub)
-                    reached  = int((ch_sub["Reach Status"] == "Reached").sum())
-                    rate     = round(reached / count * 100, 1) if count > 0 else 0
-                    gt      += count
-                    row[f"{col_name}_Count"]    = count
-                    row[f"{col_name}_Reach%"]   = rate
-                row["Grand Total"] = gt
-                pivot_rows.append(row)
-
-            # Grand Total summary row
-            if pivot_rows:
+                sms    = len(m_sub[ch_mask(m_sub, "SMS")])
+                email  = len(m_sub[ch_mask(m_sub, "Email")])
+                calls  = len(m_sub[ch_mask(m_sub, "Calls")])
+                gt     = sms + email + calls
+                breakdown1.append({
+                    "Month": period.strftime("%B %Y"),
+                    "SMS": sms,
+                    "Emails": email,
+                    "Calls": calls,
+                    "Grand Total": gt
+                })
+            if breakdown1:
                 gt_row = {"Month": "Grand Total"}
-                for ch_tag, col_name in ch_cols:
-                    ch_mask  = pa["Matching Channel"].str.contains(ch_tag, case=False, na=False)
-                    ch_sub   = pa[ch_mask]
-                    count    = len(ch_sub)
-                    reached  = int((ch_sub["Reach Status"] == "Reached").sum())
-                    gt_row[f"{col_name}_Count"]  = count
-                    gt_row[f"{col_name}_Reach%"] = round(reached / count * 100, 1) if count > 0 else 0
-                gt_row["Grand Total"] = sum(r["Grand Total"] for r in pivot_rows)
-                pivot_rows.append(gt_row)
+                for k in ["SMS", "Emails", "Calls"]:
+                    gt_row[k] = sum(r[k] for r in breakdown1)
+                gt_row["Grand Total"] = sum(r["Grand Total"] for r in breakdown1)
+                breakdown1.append(gt_row)
+            metrics["monthly_total_numbers"] = pd.DataFrame(breakdown1)
 
-            metrics["monthly_pivot"] = pd.DataFrame(pivot_rows) if pivot_rows else pd.DataFrame()
-            metrics["monthly_ch_cols"] = ch_cols  # keep label mapping for chart
+            # Breakdown 2: Reached vs Not Reached
+            breakdown2 = []
+            for period in months:
+                m_mask = pa["__month_period"] == period
+                m_sub  = pa[m_mask]
+                def reached(df, ch):
+                    mask = ch_mask(df, ch)
+                    return int((df[mask]["Reach Status"] == "Reached").sum())
+                def not_reached(df, ch):
+                    mask = ch_mask(df, ch)
+                    return int((df[mask]["Reach Status"] == "Not Reached").sum())
+                sms_r, sms_nr = reached(m_sub, "SMS"), not_reached(m_sub, "SMS")
+                email_r, email_nr = reached(m_sub, "Email"), not_reached(m_sub, "Email")
+                calls_r, calls_nr = reached(m_sub, "Calls"), not_reached(m_sub, "Calls")
+                gt = sms_r + sms_nr + email_r + email_nr + calls_r + calls_nr
+                breakdown2.append({
+                    "Month": period.strftime("%B %Y"),
+                    "SMS Reached": sms_r,
+                    "SMS Not Reached": sms_nr,
+                    "Emails Reached": email_r,
+                    "Emails Not Reached": email_nr,
+                    "Calls Reached": calls_r,
+                    "Calls Not Reached": calls_nr,
+                    "Grand Total": gt
+                })
+            if breakdown2:
+                gt_row = {"Month": "Grand Total"}
+                for k in ["SMS Reached", "SMS Not Reached", "Emails Reached", "Emails Not Reached", "Calls Reached", "Calls Not Reached"]:
+                    gt_row[k] = sum(r[k] for r in breakdown2)
+                gt_row["Grand Total"] = sum(r["Grand Total"] for r in breakdown2)
+                breakdown2.append(gt_row)
+            metrics["monthly_reached_vs_not"] = pd.DataFrame(breakdown2)
+
+            # Breakdown 3: Each Channel Reach Rate (reached only) with correct GT and percentages
+            breakdown3 = []
+            for period in months:
+                m_mask = pa["__month_period"] == period
+                m_sub  = pa[m_mask]
+                sms    = int((m_sub[ch_mask(m_sub, "SMS")]["Reach Status"] == "Reached").sum())
+                email  = int((m_sub[ch_mask(m_sub, "Email")]["Reach Status"] == "Reached").sum())
+                calls  = int((m_sub[ch_mask(m_sub, "Calls")]["Reach Status"] == "Reached").sum())
+                gt     = sms + email + calls
+                breakdown3.append({
+                    "Month": period.strftime("%B %Y"),
+                    "SMS": sms,
+                    "Emails": email,
+                    "Calls": calls,
+                    "Grand Total": gt
+                })
+            if breakdown3:
+                gt_row = {"Month": "Grand Total"}
+                for k in ["SMS", "Emails", "Calls"]:
+                    gt_row[k] = sum(r[k] for r in breakdown3)
+                gt_row["Grand Total"] = sum(r["Grand Total"] for r in breakdown3)
+                breakdown3.append(gt_row)
+            metrics["monthly_channel_reach"] = pd.DataFrame(breakdown3)
+
+            # Breakdown 4: Work Order Type reach channels (reached only) as a single pivot table
+            # Ignore blank work order types
+            wot_types = [w for w in sorted(pa[col_wot].dropna().unique()) if str(w).strip().lower() != "(blank)" and str(w).strip() != ""] if col_wot else []
+            pivot_data = {}
+            for period in months:
+                m_mask = pa["__month_period"] == period
+                m_sub  = pa[m_mask]
+                row = {"Month": period.strftime("%B %Y")}
+                for wot in wot_types:
+                    wot_mask = m_sub[col_wot] == wot
+                    wot_sub = m_sub[wot_mask]
+                    for ch in ["Emails", "SMS", "Calls"]:
+                        if ch == "Emails":
+                            count = int((wot_sub[ch_mask(wot_sub, "Email")]["Reach Status"] == "Reached").sum())
+                        elif ch == "SMS":
+                            count = int((wot_sub[ch_mask(wot_sub, "SMS")]["Reach Status"] == "Reached").sum())
+                        elif ch == "Calls":
+                            count = int((wot_sub[ch_mask(wot_sub, "Calls")]["Reach Status"] == "Reached").sum())
+                        row[f"{wot}__{ch}"] = count
+                pivot_data[period.strftime("%B %Y")] = row
+            # Add Grand Total row
+            if pivot_data:
+                gt_row = {"Month": "Grand Total"}
+                for wot in wot_types:
+                    for ch in ["Emails", "SMS", "Calls"]:
+                        gt_row[f"{wot}__{ch}"] = sum(pivot_data[m][f"{wot}__{ch}"] for m in pivot_data)
+                pivot_data["Grand Total"] = gt_row
+            # Convert to DataFrame
+            metrics["monthly_wot_channel_reach_pivot"] = pd.DataFrame(list(pivot_data.values()))
         else:
-            metrics["monthly_pivot"]    = pd.DataFrame()
-            metrics["monthly_ch_cols"]  = []
+            metrics["monthly_total_numbers"] = pd.DataFrame()
+            metrics["monthly_reached_vs_not"] = pd.DataFrame()
+            metrics["monthly_channel_reach"] = pd.DataFrame()
+            metrics["monthly_wot_channel_reach"] = pd.DataFrame()
 
         # ── Work Order Type reach rate (overall + per channel) ────────────────
         if col_wot:
@@ -673,6 +752,92 @@ class ReachRateCalculator:
         # ==================================================================
         # Sheet: Monthly Breakdown  &  By Work Order Type
         # ==================================================================
+        # Write new monthly breakdown sheets
+        def write_simple_table(ws, df, title):
+            ws.set_zoom(90)
+            ws.freeze_panes(1, 0)
+            ws.set_row(0, 24)
+            ws.write(0, 0, title, fmt_title)
+            # Write headers
+            for ci, col in enumerate(df.columns):
+                ws.write(1, ci, col, fmt_header)
+            # Write data
+            for ri, row in enumerate(df.itertuples(index=False), start=2):
+                for ci, val in enumerate(row):
+                    ws.write(ri, ci, val, fmt_row)
+
+        # Sheet: Monthly Breakdown 1 - Total Numbers
+        df1 = metrics.get("monthly_total_numbers")
+        if df1 is not None and not df1.empty:
+            ws1 = workbook.add_worksheet("Monthly Total Numbers")
+            write_simple_table(ws1, df1, "Monthly Breakdown: Total Numbers")
+
+        # Sheet: Monthly Breakdown 2 - Reached vs Not Reached
+        df2 = metrics.get("monthly_reached_vs_not")
+        if df2 is not None and not df2.empty:
+            ws2 = workbook.add_worksheet("Monthly Reached vs Not")
+            write_simple_table(ws2, df2, "Monthly Breakdown: Reached vs Not Reached")
+
+        # Sheet: Monthly Breakdown 3 - Channel Reach Rate (Reached Only) (pivot style)
+        df3 = metrics.get("monthly_channel_reach")
+        if df3 is not None and not df3.empty:
+            ws3 = workbook.add_worksheet("Monthly Channel Reach")
+            ws3.set_zoom(90)
+            ws3.freeze_panes(1, 0)
+            ws3.set_row(0, 24)
+            ws3.write(0, 0, "Monthly Reach Rate by Communication Channel (Reached Cases Only)", fmt_title)
+            # Headers
+            headers = ["Month", "Emails", "SMS", "Calls", "Grand Total"]
+            for ci, h in enumerate(headers):
+                ws3.write(1, ci, h, fmt_header)
+            # Data rows
+            for ri, row in enumerate(df3.itertuples(index=False), start=2):
+                ws3.write(ri, 0, getattr(row, "Month"), fmt_row)
+                # Emails
+                ws3.write(ri, 1, getattr(row, "Emails"), fmt_row)
+                # SMS
+                ws3.write(ri, 2, getattr(row, "SMS"), fmt_row)
+                # Calls
+                ws3.write(ri, 3, getattr(row, "Calls"), fmt_row)
+                # Grand Total
+                gt = getattr(row, "Grand Total", 0)
+                ws3.write(ri, 4, gt, fmt_row)
+
+        # Sheet: Monthly Breakdown 4 - Work Order Type Channel Reach (single pivot table)
+        df4 = metrics.get("monthly_wot_channel_reach_pivot")
+        if df4 is not None and not df4.empty:
+            wot_types = []
+            for col in df4.columns:
+                if col != "Month":
+                    wot, ch = col.split("__")
+                    if wot not in wot_types:
+                        wot_types.append(wot)
+            channels = ["Emails", "SMS", "Calls"]
+            ws4 = workbook.add_worksheet("Monthly WOT Channel Reach")
+            ws4.set_zoom(90)
+            ws4.freeze_panes(2, 1)
+            ws4.set_row(0, 24)
+            ws4.write(0, 0, "Monthly Reach Rate by Work Order Type and Channel (Reached Only)", fmt_title)
+            # Build headers
+            col = 1
+            for wot in wot_types:
+                ws4.merge_range(1, col, 1, col+2, wot, fmt_header)
+                for ci, ch in enumerate(channels):
+                    ws4.write(2, col+ci, ch, fmt_header)
+                col += 3
+            ws4.write(1, 0, "Month", fmt_header)
+            ws4.write(2, 0, "Month", fmt_header)
+            # Write data
+            for ri, row in enumerate(df4.itertuples(index=False), start=3):
+                ws4.write(ri, 0, getattr(row, "Month"), fmt_row)
+                col = 1
+                for wot in wot_types:
+                    for ch in channels:
+                        val = getattr(row, f"{wot}__{ch}", 0)
+                        ws4.write(ri, col, val, fmt_row)
+                        col += 1
+
+        # Keep original monthly and WOT sheets for reference
         self._add_monthly_sheet(workbook, metrics,
                                  fmt_title, fmt_header, fmt_row, fmt_row_alt, fmt_section)
         self._add_wot_sheet(workbook, metrics,

@@ -198,13 +198,14 @@ class FileRow(QWidget):
         self._path = ""
 
         row = QHBoxLayout(self)
-        row.setContentsMargins(0, 4, 0, 4)
-        row.setSpacing(12)
+        row.setContentsMargins(0, 6, 0, 6)  # Moderate vertical padding
+        row.setSpacing(12)  # Moderate horizontal spacing
 
         # Label — fixed, wide enough for longest label
         lbl = QLabel(label)
-        lbl.setFixedWidth(240)
+        lbl.setFixedWidth(320)  # Increased width for full label visibility
         lbl.setWordWrap(False)
+        lbl.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
         lbl.setStyleSheet(
             f"font-family: {FF}; font-size: {BASE}px; font-weight: 600;"
             f"color: {IBM['text_primary']};"
@@ -219,13 +220,15 @@ class FileRow(QWidget):
             f"border-radius: 4px; padding: 6px 12px;"
         )
         self._path_lbl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self._path_lbl.setMinimumHeight(40)
+        self._path_lbl.setMinimumHeight(36)
         row.addWidget(self._path_lbl)
 
         # Browse button
         browse_btn = QPushButton("Browse…")
         browse_btn.setStyleSheet(_s_browse())
         browse_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        browse_btn.setMinimumHeight(36)
+        browse_btn.setMinimumWidth(90)
         browse_btn.clicked.connect(self._browse)
         row.addWidget(browse_btn)
 
@@ -257,8 +260,8 @@ class ReachRateCalculatorWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Reach Rate Calculator — ART Q Master")
-        self.setMinimumSize(900, 820)
-        self.resize(980, 900)
+        self.setMinimumSize(1250, 900)
+        self.resize(1400, 1000)
 
         try:
             current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -318,8 +321,8 @@ class ReachRateCalculatorWindow(QMainWindow):
         # ── File Upload Section ────────────────────────────────────────────────
         upload_box = self._make_group("  Input Files")
         upload_layout = QVBoxLayout(upload_box)
-        upload_layout.setSpacing(8)
-        upload_layout.setContentsMargins(20, 24, 20, 20)
+        upload_layout.setSpacing(18)  # Increased vertical spacing between rows
+        upload_layout.setContentsMargins(20, 24, 20, 20)  # Default padding inside group
 
         self._row_pa    = FileRow("PA Cases  (Active Cases Workbook)")
         self._row_sms   = FileRow("SMS View")
@@ -363,6 +366,7 @@ class ReachRateCalculatorWindow(QMainWindow):
                 f"font-family: {FF}; font-size: {BASE}px; font-weight: 600;"
                 f"color: {IBM['text_primary']};"
             )
+            lbl.setMinimumWidth(40)
             date_hl.addWidget(lbl)
 
             de = QDateEdit()
@@ -373,8 +377,8 @@ class ReachRateCalculatorWindow(QMainWindow):
                 de.setDate(QDate.currentDate())
             de.setDisplayFormat("yyyy-MM-dd")
             de.setStyleSheet(self._date_edit_style())
-            de.setMinimumWidth(160)
-            de.setMinimumHeight(40)
+            de.setMinimumWidth(120)
+            de.setMinimumHeight(36)
             de.setEnabled(False)
             setattr(self, attr, de)
             date_hl.addWidget(de)
@@ -391,11 +395,17 @@ class ReachRateCalculatorWindow(QMainWindow):
 
         self._process_btn = QPushButton("⚙   Process")
         self._process_btn.setStyleSheet(_s_primary())
+        self._process_btn.setMinimumHeight(40)
+        self._process_btn.setMinimumWidth(120)
+        self._process_btn.setFont(QFont("IBM Plex Sans", 13, QFont.Bold))
         self._process_btn.clicked.connect(self._on_process)
         act_row.addWidget(self._process_btn)
 
         self._open_btn = QPushButton("📂   Open Output")
         self._open_btn.setStyleSheet(_s_success())
+        self._open_btn.setMinimumHeight(40)
+        self._open_btn.setMinimumWidth(120)
+        self._open_btn.setFont(QFont("IBM Plex Sans", 13, QFont.Bold))
         self._open_btn.setEnabled(False)
         self._open_btn.clicked.connect(self._open_output)
         act_row.addWidget(self._open_btn)
@@ -404,6 +414,9 @@ class ReachRateCalculatorWindow(QMainWindow):
 
         self._menu_btn = QPushButton("← Back to Menu")
         self._menu_btn.setStyleSheet(_s_ghost())
+        self._menu_btn.setMinimumHeight(40)
+        self._menu_btn.setMinimumWidth(120)
+        self._menu_btn.setFont(QFont("IBM Plex Sans", 13, QFont.Bold))
         self._menu_btn.clicked.connect(self._back_to_menu)
         act_row.addWidget(self._menu_btn)
 
