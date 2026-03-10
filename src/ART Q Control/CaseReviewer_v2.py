@@ -281,7 +281,7 @@ def get_case_closing_code(case_number, cases_completed_count, total_in_progress_
             font = QFont('IBM Plex Sans', _fs2)
             self.setFont(font)
             self.setWindowTitle("Case Reviewer")
-            self.resize(620, 780)
+            self.resize(620, 850)
             self.selected_code = None
             self.add_note = False
             self.setModal(True)
@@ -492,7 +492,7 @@ def get_case_closing_code(case_number, cases_completed_count, total_in_progress_
             from PyQt5.QtGui import QFont
             btn = QPushButton(label_text)
             btn.setFont(QFont('IBM Plex Sans', _fs2, QFont.Bold))
-            btn.setMinimumHeight(52)
+            btn.setMinimumHeight(45)
             btn.setStyleSheet(
                 f"QPushButton {{ background-color: {_c2['layer_01']};"
                 f" border: 1px solid {_c2['border_subtle']}; border-radius: 4px;"
@@ -674,6 +674,7 @@ def get_call_closing_code():
             super().__init__()
             self.setWindowTitle("Call Closing Code")
             self.setMinimumWidth(460)
+            self.setMinimumHeight(500)
             self.setStyleSheet(get_qss('light', _cc_fs))
             self.setFont(QFont('IBM Plex Sans', _cc_fs))
 
@@ -740,7 +741,7 @@ def get_call_closing_code():
                 c = idx % 2
                 btn = QPushButton(label_text)
                 btn.setFont(QFont('IBM Plex Sans', _cc_fs, QFont.Bold))
-                btn.setMinimumHeight(56)
+                btn.setMinimumHeight(52)
                 btn.setStyleSheet(
                     f"QPushButton {{ background-color: {bg}; color: #ffffff;"
                     f" border: none; border-radius: 4px;"
@@ -756,7 +757,7 @@ def get_call_closing_code():
 
             other_btn = QPushButton("Custom Code")
             other_btn.setFont(QFont('IBM Plex Sans', _cc_fs))
-            other_btn.setMinimumHeight(44)
+            other_btn.setMinimumHeight(40)
             other_btn.setStyleSheet(
                 f"QPushButton {{ background-color: transparent; color: {_c_cc['text_secondary']};"
                 f" border: 1px solid {_c_cc['border_subtle']}; border-radius: 4px;"
