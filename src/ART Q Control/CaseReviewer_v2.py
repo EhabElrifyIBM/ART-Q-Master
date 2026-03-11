@@ -345,7 +345,7 @@ def get_case_closing_code(case_number, cases_completed_count, total_in_progress_
                 ("Resolved", "Issue Resolved"),
                 ("Issue Not Fixed", "Issue Not Fixed"),
                 ("Not Reached", "Customer Not Reached"),
-                ("Not Yet Tested", "Machine Not Yet Tested"),
+                ("Not Yet Tested", "Not Yet Tested"),
                 ("DND", "DND"),
                 ("Escalated", "Escalated"),
                 ("Still in Review", "Need Third Action"),
