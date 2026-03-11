@@ -49,6 +49,34 @@ def _normalize_case_num(val) -> str:
         return ""
     return str(val).strip()
 
+def _normalize_date(val) -> str:
+    """
+    Normalize a date value to YYYY-MM-DD format.
+    Handles:
+    - Already correct format: 2026-03-11
+    - DateTime format: 2025-12-01 14:35:51
+    - Pandas datetime objects
+    - Empty/NaN values
+    Returns empty string if invalid.
+    """
+    if val is None:
+        return ""
+    if isinstance(val, float) and pd.isna(val):
+        return ""
+    
+    val_str = str(val).strip()
+    if not val_str or val_str.lower() in ("", "nan", "none", "nat"):
+        return ""
+    
+    # Try to parse as datetime
+    try:
+        dt = pd.to_datetime(val_str, errors="coerce")
+        if pd.isna(dt):
+            return ""
+        return dt.strftime("%Y-%m-%d")
+    except Exception:
+        return ""
+
 # ── Main Class ─────────────────────────────────────────────────────────────────
 
 class ReachRateCalculator:
@@ -158,25 +186,49 @@ class ReachRateCalculator:
         # Normalize case numbers
         pa["__case_num"] = pa[col_case].apply(_normalize_case_num)
 
-        # ── Step 1b: Complete missing Completion Dates from Last Status Change ─────
+        # ── Step 1b: Complete missing Completion Dates with fallback hierarchy ───
+        # Fallback 1: Last Status Change (if available)
+        # Fallback 2: Earliest date from SMS/Email/Phone channels
         col_last_status = _find_col(pa, ["Last Status Change"])
+        
+        def _is_blank(v):
+            if v is None: return True
+            if isinstance(v, float) and pd.isna(v): return True
+            return str(v).strip().lower() in ("", "nan", "none", "nat")
+        
+        # Count initial blanks
+        before_fill = pa[col_date].apply(_is_blank).sum()
+        
+        # Fallback 1: Fill from Last Status Change
         if col_last_status:
-            def _is_blank(v):
-                if v is None: return True
-                if isinstance(v, float) and pd.isna(v): return True
-                return str(v).strip().lower() in ("", "nan", "none", "nat")
-
-            before_fill = pa[col_date].apply(_is_blank).sum()
-            if before_fill > 0:
-                fill_mask = pa[col_date].apply(_is_blank)
-                pa.loc[fill_mask, col_date] = pa.loc[fill_mask, col_last_status]
-                after_fill = pa[col_date].apply(_is_blank).sum()
-                self._log(
-                    f"  Completion Date: filled {before_fill - after_fill} empty cells"
-                    f" from 'Last Status Change' ({after_fill} still blank)"
-                )
-        else:
-            self._log("  'Last Status Change' column not found — skipping date completion", "WARNING")
+            fill_mask = pa[col_date].apply(_is_blank)
+            pa.loc[fill_mask, col_date] = pa.loc[fill_mask, col_last_status]
+        
+        # Fallback 2: Fill from channel dates (SMS/Email/Phone)
+        remaining_blanks = pa[col_date].apply(_is_blank)
+        if remaining_blanks.any():
+            def get_fallback_date(case_num):
+                if not _is_blank(case_num):
+                    return self._get_date_from_channels(case_num)
+                return ""
+            
+            fill_mask_2 = pa[col_date].apply(_is_blank)
+            pa.loc[fill_mask_2, col_date] = pa.loc[fill_mask_2, "__case_num"].apply(get_fallback_date)
+        
+        # Count after all fallbacks
+        after_fill = pa[col_date].apply(_is_blank).sum()
+        filled_from_last_status = before_fill - after_fill
+        remaining_blank = after_fill
+        
+        if filled_from_last_status > 0 or before_fill > 0:
+            self._log(
+                f"  Completion Date: filled {filled_from_last_status} from 'Last Status Change', "
+                f"filled more from channel dates ({remaining_blank} still blank)"
+            )
+        
+        # Normalize all dates to YYYY-MM-DD format
+        pa[col_date] = pa[col_date].apply(_normalize_date)
+        self._log("  All dates normalized to YYYY-MM-DD format")
 
         # ── Step 2: Date range filtering ───────────────────────────────────────
         if start_date or end_date:
@@ -306,6 +358,55 @@ class ReachRateCalculator:
             self._log(f"  WARNING: case number column not found (tried {candidates})", "WARNING")
             return set()
         return set(df[col].apply(_normalize_case_num).dropna())
+
+    def _get_date_from_channels(self, case_num: str) -> str:
+        """
+        Look up a case number in SMS/Email/Phone sheets and return the earliest
+        'Date Created' or 'Entered Queue' date found, normalized to YYYY-MM-DD.
+        Returns empty string if not found in any channel.
+        """
+        dates_found = []
+        
+        # SMS: look for Date Created
+        if self.sms_df is not None:
+            col = _find_col(self.sms_df, ["Date Created"])
+            case_col = _find_col(self.sms_df, ["Case Number (Regarding) (Case)", "Case Number"])
+            if col and case_col:
+                mask = self.sms_df[case_col].apply(_normalize_case_num) == case_num
+                if mask.any():
+                    date_val = self.sms_df.loc[mask, col].iloc[0]
+                    norm_dt = _normalize_date(date_val)
+                    if norm_dt:
+                        dates_found.append(norm_dt)
+        
+        # Email: look for Entered Queue
+        if self.email_df is not None:
+            col = _find_col(self.email_df, ["Entered Queue"])
+            case_col = _find_col(self.email_df, ["Case Number (Object) (Email)", "Case Number"])
+            if col and case_col:
+                mask = self.email_df[case_col].apply(_normalize_case_num) == case_num
+                if mask.any():
+                    date_val = self.email_df.loc[mask, col].iloc[0]
+                    norm_dt = _normalize_date(date_val)
+                    if norm_dt:
+                        dates_found.append(norm_dt)
+        
+        # Phone: look for Date Created
+        if self.phone_df is not None:
+            col = _find_col(self.phone_df, ["Date Created"])
+            case_col = _find_col(self.phone_df, ["Case Number (Regarding) (Case)", "Case Number"])
+            if col and case_col:
+                mask = self.phone_df[case_col].apply(_normalize_case_num) == case_num
+                if mask.any():
+                    date_val = self.phone_df.loc[mask, col].iloc[0]
+                    norm_dt = _normalize_date(date_val)
+                    if norm_dt:
+                        dates_found.append(norm_dt)
+        
+        # Return the earliest date found
+        if dates_found:
+            return min(dates_found)  # lexicographic sort works for YYYY-MM-DD
+        return ""
 
     def _compute_metrics(self, pa: pd.DataFrame, col_fa: str,
                           col_date: str = None, col_wot: str = None) -> dict:
