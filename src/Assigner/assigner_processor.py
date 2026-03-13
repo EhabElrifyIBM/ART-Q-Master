@@ -2710,7 +2710,7 @@ class FileProcessor:
             
             if status_cols:
                 for status_col in status_cols:
-                    in_progress_mask = in_progress_mask | (df[status_col].astype(str).str.lower().str.contains(r'in[_\s]*progress', regex=True, na=False))
+                    in_progress_mask = in_progress_mask | (df[status_col].astype(str).str.lower().str.contains(r'in[_\s.]?progress', regex=True, na=False))
             
             # Count only in_progress cases
             total_cases = in_progress_mask.sum()
@@ -2811,7 +2811,7 @@ class FileProcessor:
                     in_progress_mask = pd.Series([False] * len(chat_cases), index=chat_cases.index)
                     for status_col in status_cols:
                         if status_col in chat_cases.columns:
-                            in_progress_mask = in_progress_mask | (chat_cases[status_col].astype(str).str.lower().str.contains('in_progress', na=False))
+                            in_progress_mask = in_progress_mask | (chat_cases[status_col].astype(str).str.lower().str.contains(r'in[_\s.]?progress', regex=True, na=False))
                     in_progress_cases = chat_cases[in_progress_mask]
                     current_queue = len(in_progress_cases)
             
@@ -2907,7 +2907,7 @@ class FileProcessor:
                 for status_col in status_cols:
                     if status_col in chat_agent_cases.columns:
                         in_progress_mask_chat = in_progress_mask_chat | (
-                            chat_agent_cases[status_col].astype(str).str.lower().str.contains('in.?progress|inprogress', regex=True, na=False)
+                            chat_agent_cases[status_col].astype(str).str.lower().str.contains(r'in[_\s.]?progress', regex=True, na=False)
                         )
                 current_chat_in_progress = in_progress_mask_chat.sum()
             
@@ -2933,23 +2933,23 @@ class FileProcessor:
                 for status_col in status_cols:
                     if status_col in handler_all.columns:
                         in_progress_mask_handler = in_progress_mask_handler | (
-                            handler_all[status_col].astype(str).str.lower().str.contains('in.?progress|inprogress', regex=True, na=False)
+                            handler_all[status_col].astype(str).str.lower().str.contains(r'in[_\s.]?progress', regex=True, na=False)
                         )
                 
                 handler_in_progress_indices = handler_all[in_progress_mask_handler].index.tolist()
                 queue_size = len(handler_in_progress_indices)
                 
-                self.logger.info(f"  {handler}: {queue_size} in_progress cases (fair share: {fair_share:.2f})", end="")
-                
                 if queue_size > fair_share:
+                    eligible_status = f" → ELIGIBLE (excess: {queue_size - fair_share:.0f})"
                     eligible_handlers_info[handler] = {
                         'queue_size': queue_size,
                         'in_progress_indices': handler_in_progress_indices,
                         'excess': queue_size - fair_share
                     }
-                    self.logger.info(f" → ELIGIBLE (excess: {queue_size - fair_share:.0f})")
                 else:
-                    self.logger.info(f" → not eligible")
+                    eligible_status = " → not eligible"
+                
+                self.logger.info(f"  {handler}: {queue_size} in_progress cases (fair share: {fair_share:.2f}){eligible_status}")
             
             if not eligible_handlers_info:
                 self.logger.info("No eligible handlers found - all have in_progress queue at or below fair share")
