@@ -2463,10 +2463,16 @@ class FileProcessor:
             try:
                 if prev_file and os.path.exists(prev_file):
                     excel_file = pd.ExcelFile(prev_file)
+                    # Load ALL handler sheets to preserve work for both selected AND unselected handlers
+                    # RULE: Unselected handlers' previous work is preserved; they just don't get NEW cases assigned
                     handler_sheets = [sheet for sheet in excel_file.sheet_names if isinstance(sheet, str) and sheet.endswith("'s Cases")]
                     preserved_from_sheets = 0
                     for sheet_name in handler_sheets:
                         handler_name = sheet_name.replace("'s Cases", '').strip()
+                        # Skip Chat Agent's Cases - it's handled separately
+                        if handler_name == "Chat Agent" or sheet_name == "Chat Agent's Cases":
+                            self.logger.info(f"Skipping '{sheet_name}' - Chat Agent cases are handled separately")
+                            continue
                         try:
                             sheet_df = pd.read_excel(prev_file, sheet_name=sheet_name)
                             if 'Case Number' not in sheet_df.columns:
@@ -2481,6 +2487,9 @@ class FileProcessor:
                                 if case_num not in prev_assignments:
                                     prev_assignments.add(case_num)
                                     preserved_from_sheets += 1
+                            # Log if this is an unselected handler
+                            if handler_name not in cleaned_handlers:
+                                self.logger.info(f"✓ Preserving work from UNSELECTED handler '{handler_name}' - they keep their previous cases but get NO new cases")
                         except Exception:
                             continue
                     # Apply preserved assignments from sheets to current df
@@ -2494,6 +2503,15 @@ class FileProcessor:
                     self.logger.info(f"Preserved {preserved_from_sheets} new cases from previous handler sheets; applied to {applied} rows in current data")
             except Exception as e:
                 self.logger.warning(f"Could not preserve from previous handler sheets: {str(e)}")
+
+            # CRITICAL: Convert "in progress today" → "in_progress" for ALL cases (including preserved)
+            self.logger.info("=== CONVERTING 'in progress today' → 'in_progress' (ALL cases) ===")
+            if 'Status' in df.columns:
+                in_progress_today_mask = df['Status'].astype(str).str.strip().str.lower() == 'in progress today'
+                converted_count = in_progress_today_mask.sum()
+                if converted_count > 0:
+                    df.loc[in_progress_today_mask, 'Status'] = 'in_progress'
+                    self.logger.info(f"✓ Converted {converted_count} cases from 'in progress today' to 'in_progress'")
 
             # STEP 3: Calculate current workload after preservation
             self.logger.info("=== STEP 3: Calculating Current Workload After Preservation ===")
@@ -3282,9 +3300,9 @@ class FileProcessor:
                 in_progress_indices = info['in_progress_indices']
                 queue_size = info['queue_size']
                 
-                # Pull from bottom (start of list = oldest entries)
+                # Pull from END (newest entries) - last cases_to_pull items
                 cases_to_pull = min(cases_needed, len(in_progress_indices))
-                indices_to_reassign = in_progress_indices[:cases_to_pull]
+                indices_to_reassign = in_progress_indices[-cases_to_pull:] if cases_to_pull > 0 else []
                 
                 # Get case numbers for logging
                 case_num_col = None
@@ -3512,15 +3530,15 @@ class FileProcessor:
                 # CRITICAL FIX: Create empty sheet with proper headers even if no cases
                 self.logger.info(f"No cases for Chat Agent - creating empty '{chat_agent_sheet_name}' sheet with headers")
                 
-                # Create empty DataFrame with output columns (same structure as other handler sheets)
-                empty_sheet_df = pd.DataFrame(columns=self.output_columns)
+                # Create empty DataFrame with no forced column order - let it match previous file naturally
+                empty_sheet_df = pd.DataFrame()
                 
                 # Write empty sheet with headers
                 empty_sheet_df.to_excel(writer, sheet_name=chat_agent_sheet_name, index=False)
                 self.auto_adjust_columns(writer, empty_sheet_df, chat_agent_sheet_name)
                 # Lock the sheet
                 self.protect_worksheet(writer, chat_agent_sheet_name, password='artadmin')
-                self.logger.info(f"✓ Created empty '{chat_agent_sheet_name}' sheet with headers (rows: 0, columns: {len(self.output_columns)})")
+                self.logger.info(f"✓ Created empty '{chat_agent_sheet_name}' sheet with headers (rows: 0, no forced column order)")
 
                 
         except Exception as e:
@@ -5300,7 +5318,7 @@ class FinalProcessor:
                 
                 # 4.1: Create individual handler sheets FIRST (each handler gets their own sheet)
                 self.logger.info("=== 4.1: CREATING INDIVIDUAL HANDLER SHEETS ===")
-                self.create_handler_sheets_from_processed_data(writer, output_df, prev_file=prev_file, chat_agent_info=chat_agent_info)
+                self.create_handler_sheets_from_processed_data(writer, output_df, prev_file=prev_file, chat_agent_info=chat_agent_info, selected_handlers=selected_handlers)
 
                 # 4.1.2: Create Chat Agent's Cases sheet (if Chat Agent enabled)
                 # ====== CRITICAL RULE: Sheet name is ALWAYS "Chat Agent's Cases" (fixed) ======
@@ -6422,7 +6440,7 @@ class FinalProcessor:
             self.logger.error(f"Error sorting cases by status: {str(e)}")
             return df
 
-    def create_handler_sheets_from_processed_data(self, writer, processed_df, prev_file=None, chat_agent_info=None):
+    def create_handler_sheets_from_processed_data(self, writer, processed_df, prev_file=None, chat_agent_info=None, selected_handlers=None):
         """Create individual handler sheets from the fully processed data (excluding Chat Agent cases)"""
         try:
             self.logger.info("Creating individual handler sheets from processed data...")
@@ -6476,10 +6494,10 @@ class FinalProcessor:
                     working_df = working_df[~excluded_mask].copy()
                 working_df = working_df.drop(columns=['_normalized_cn'], errors='ignore')
             
-            # Get unique handlers (excluding empty/NaN values)
-            handlers = working_df['Assigned To'].dropna().astype(str).str.strip().unique()
-            handlers = [h for h in handlers if h and h.lower() not in ['nan', 'none', '']]
-
+            # Do NOT get all unique handlers from "Assigned To" column as it contains spurious values
+            # CRITICAL: Only use main handlers + previously existing handlers
+            MAIN_HANDLERS = ["Adam", "Ehab", "Teama", "Ibrahim", "Moamen"]
+            
             # Load previous handler data if provided
             prev_handler_data = {}
             if prev_file and os.path.exists(prev_file):
@@ -6490,10 +6508,15 @@ class FinalProcessor:
                     self.logger.warning(f"Could not load previous handler data: {str(e)}")
                     prev_handler_data = {}
 
-            # Union current handlers with previous to ensure preservation
-            all_handlers = set(handlers)
-            all_handlers.update(prev_handler_data.keys())
+            # CRITICAL: Only use main handlers + previously existing handlers
+            # DO NOT include all unique values from "Assigned To" column (contains spurious values)
+            all_handlers = set(MAIN_HANDLERS)  # Start with main handlers
+            all_handlers.update(prev_handler_data.keys())  # Add previous handlers
             handlers = list(all_handlers)
+            
+            self.logger.info(f"Main handlers to always preserve: {MAIN_HANDLERS}")
+            self.logger.info(f"Previous handlers with work: {list(prev_handler_data.keys())}")
+            self.logger.info(f"NOTE: Ignoring spurious 'Assigned To' values from PA Cases - only using main handlers and previous handlers")
             
             # Additional safety check for handler names
             valid_handlers = []
@@ -6593,10 +6616,15 @@ class FinalProcessor:
 
     def create_handler_sheets(self, writer, output_df, prev_file=None):
         """Create individual sheets for each handler with their assigned cases.
-        FIXED: Now preserves ALL handler sheets regardless of selection status.
+        CRITICAL: Always preserve ALL 5 main handlers regardless of selection status.
+        Main handlers: Adam, Ehab, Teama, Ibrahim, Moamen
         This is called AFTER all SMS/Email processing to ensure statuses are current."""
         try:
             self.logger.info("Creating individual handler sheets...")
+            
+            # Define the 5 main handlers that must always be preserved
+            MAIN_HANDLERS = ["Adam", "Ehab", "Teama", "Ibrahim", "Moamen"]
+            self.logger.info(f"Main handlers to always preserve: {MAIN_HANDLERS}")
             
             # Extract unique handlers from the output data
             if 'Assigned To' not in output_df.columns:
@@ -6617,14 +6645,15 @@ class FinalProcessor:
                     self.logger.warning(f"Could not load previous handler data: {str(e)}")
                     prev_handler_data = {}
             
-            # FIXED: Combine current handlers with previous handlers to preserve ALL work
-            all_handlers = set(current_handlers)
-            all_handlers.update(prev_handler_data.keys())
+            # CRITICAL: Always include ALL main handlers (not just current or previous)
+            all_handlers = set(MAIN_HANDLERS)  # Start with main handlers
+            all_handlers.update(current_handlers)  # Add any current handlers
+            all_handlers.update(prev_handler_data.keys())  # Add any previous handlers
             handlers = list(all_handlers)
             
             self.logger.info(f"Current handlers in output: {current_handlers}")
             self.logger.info(f"Previous handlers with work: {list(prev_handler_data.keys())}")
-            self.logger.info(f"All handlers to process: {handlers}")
+            self.logger.info(f"ALL handlers to process (including main handlers): {handlers}")
             
             # Additional safety check for handler names
             valid_handlers = []
@@ -6669,8 +6698,10 @@ class FinalProcessor:
                         # Merge with previous data (update existing, append new)
                         final_handler_cases = self.merge_handler_cases(handler_cases, prev_cases, handler)
                     else:
-                        self.logger.warning(f"Handler '{handler}' has no current or previous cases - skipping")
-                        continue
+                        # Handler has no current or previous cases - create empty sheet with headers
+                        self.logger.info(f"Handler '{handler}' has no current or previous cases - creating empty sheet")
+                        # Use output_df columns for empty sheet to maintain consistent structure
+                        final_handler_cases = pd.DataFrame(columns=output_df.columns)
                     
                     # Create handler sheet name (ensure it's Excel-safe)
                     sheet_name = f"{handler}'s Cases"
@@ -6705,7 +6736,8 @@ class FinalProcessor:
             self.logger.error(f"Traceback: {traceback.format_exc()}")
 
     def load_previous_handler_sheets(self, prev_file):
-        """Load previous handler sheets data for smart updates"""
+        """Load previous handler sheets data for smart updates
+        NOTE: Excludes Chat Agent's Cases sheet as it's handled separately"""
         prev_handler_data = {}
 
         # Validate file existence
@@ -6717,8 +6749,8 @@ class FinalProcessor:
             # Read the previous file safely
             prev_excel = pd.ExcelFile(prev_file)
 
-            # Look for handler sheets (sheets ending with "'s Cases")
-            handler_sheets = [s for s in prev_excel.sheet_names if isinstance(s, str) and s.endswith("'s Cases")]
+            # Look for handler sheets (sheets ending with "'s Cases") but EXCLUDE Chat Agent's Cases
+            handler_sheets = [s for s in prev_excel.sheet_names if isinstance(s, str) and s.endswith("'s Cases") and s != "Chat Agent's Cases"]
 
             for sheet_name in handler_sheets:
                 try:
@@ -7809,32 +7841,44 @@ class FinalProcessor:
         try:
             self.logger.info("Creating counters sheet (reading from PA Cases main sheet)...")
             
-            # ====== CRITICAL RULE: Counter sheet shows ONLY TODAY'S SELECTED HANDLERS ======
-            # Do NOT include handlers from previous files
-            # Do NOT include Chat Agent
-            self.logger.info(f"RULE: Counter shows ONLY today's selected handlers: {selected_handlers}")
+            # ====== RULE: Counter sheet shows ALL HANDLERS (selected and unselected) ======
+            # This includes all main handlers even if unselected
+            # Unselected handlers show their preserved work
+            self.logger.info(f"Selected handlers for NEW case assignment: {selected_handlers}")
+            self.logger.info(f"Counter will show ALL handlers (both selected and unselected)")
             
-            if not selected_handlers:
-                self.logger.warning("No selected handlers provided - cannot create counter sheet")
-                return
-            
-            # Get Chat Agent name to exclude from counters
+            # Get Chat Agent name if enabled
             chat_agent_name = None
             if chat_agent_info and chat_agent_info.get('enabled'):
                 chat_agent_name = chat_agent_info.get('supporter_name', 'Chat Agent')
-                self.logger.info(f"RULE: Excluding Chat Agent '{chat_agent_name}' from ALL counter tables")
+                self.logger.info(f"Including Chat Agent '{chat_agent_name}' in counter tables")
             
-            # ====== USE ONLY TODAY'S SELECTED HANDLERS ======
-            # Filter OUT Chat Agent from the list
-            handler_list = [h for h in selected_handlers if h and h.lower() != 'nan']
+            # ====== GET ALL HANDLERS FROM DATA (selected + unselected) ======
+            # Include main handlers and any other handlers in the data
+            MAIN_HANDLERS = ["Adam", "Ehab", "Teama", "Ibrahim", "Moamen"]
+            
+            # Get handlers from data
+            handlers_from_data = df['Assigned To'].dropna().astype(str).str.strip().unique()
+            handlers_from_data = [h for h in handlers_from_data if h and h.lower() not in ['nan', 'none', '']]
+            
+            # Combine main + data handlers
+            all_handlers = set(MAIN_HANDLERS)
+            all_handlers.update(handlers_from_data)
+            
+            # Add Chat Agent if enabled
+            if chat_agent_name and chat_agent_name not in all_handlers:
+                all_handlers.add(chat_agent_name)
+            
+            # Remove Chat Agent from main handler list (it gets its own sheet)
+            handler_list = [h for h in sorted(all_handlers) if h != chat_agent_name and h != "Chat Agent"]
+            
+            self.logger.info(f"Counter sheet will show ALL handlers: {handler_list}")
             if chat_agent_name:
-                handler_list = [h for h in handler_list if h != chat_agent_name]
-            
-            self.logger.info(f"Counter sheet will show: {handler_list}")
+                self.logger.info(f"  (Plus Chat Agent: {chat_agent_name})")
             
             # Check if we have handlers to process
             if not handler_list:
-                self.logger.warning("No handlers found to create counter sheet (after excluding Chat Agent)")
+                self.logger.warning("No handlers found to create counter sheet")
                 return
                 
             progress_columns = [
@@ -7842,7 +7886,6 @@ class FinalProcessor:
                 ("in_progress", "in_progress"), # C column  
                 ("new",        "new"),          # D column
                 ("Skipped", "Skipped"),        # E column
-                ("In Progress Today", "In Progress Today"),  # F (or G) column
                 ("Requires a Call", None),  # Special: Final Action='Sent Email' AND Status='in_progress'
                 ("Total",      None),
             ]
@@ -7850,54 +7893,17 @@ class FinalProcessor:
             writer.sheets['Counter'] = worksheet
             worksheet.write(0, 0, 'Progress Counter')
             
-            # STEP 1: Write header row with status criteria values
+            # STEP 1: Write header row (no criteria row below it)
             # Row 1: Header labels
             worksheet.write(1, 0, 'Handler')
-            for col_idx, (col_name, criteria_value) in enumerate(progress_columns, 1):
+            for col_idx, (col_name, _) in enumerate(progress_columns, 1):
                 worksheet.write(1, col_idx, col_name)
-                # RULE: Write criteria value in row 2 (B2, C2, D2, etc) for formula references
-                if criteria_value:  # Not None
-                    worksheet.write(1 + 1, col_idx, criteria_value)  # Write to row 2
             
-            # Initialize row_idx to ensure it's always defined
-            row_idx = 2
+            # Initialize row_idx and start writing data rows at row 2
+            row_idx = 1  # Header is in row 1, data starts at row 2
             
-            # Add Chat Agent row if enabled
-            if chat_agent_info and chat_agent_info.get('enabled'):
-                chat_agent_name = chat_agent_info.get('supporter_name', 'Chat Agent')
-                self.logger.info(f"Adding Chat Agent row to counter: {chat_agent_name}")
-                current_row = row_idx + 1  # Row 3 if Chat Agent exists (worksheet row 3 = Excel row 4)
-                worksheet.write(current_row, 0, f"{chat_agent_name} (Chat Agent)")
-                
-                # For Chat Agent: use formulas with Counter!$B$3, Counter!$C$3 references
-                # (criteria are in worksheet row 2, which is Excel row 3)
-                # Closed: =COUNTIFS('Chat Agent''s Cases'!R:R,Counter!$B$3)
-                # In Progress: =COUNTIFS('Chat Agent''s Cases'!R:R,Counter!$C$3)
-                for col_idx, (col_name, criteria_value) in enumerate(progress_columns, 1):
-                    if col_name == "closed":
-                        formula = '=COUNTIFS(\'Chat Agent\'\'s Cases\'!R:R,Counter!$B$3)'
-                        worksheet.write_formula(current_row, col_idx, formula)
-                    elif col_name == "in_progress":
-                        formula = '=COUNTIFS(\'Chat Agent\'\'s Cases\'!R:R,Counter!$C$3)'
-                        worksheet.write_formula(current_row, col_idx, formula)
-                    elif col_name == "new":
-                        formula = '=COUNTIFS(\'Chat Agent\'\'s Cases\'!R:R,Counter!$D$3)'
-                        worksheet.write_formula(current_row, col_idx, formula)
-                    elif col_name == "Skipped":
-                        formula = '=COUNTIFS(\'Chat Agent\'\'s Cases\'!R:R,Counter!$E$3)'
-                        worksheet.write_formula(current_row, col_idx, formula)
-                    elif col_name == "In Progress Today":
-                        formula = '=COUNTIFS(\'Chat Agent\'\'s Cases\'!R:R,Counter!$F$3)'
-                        worksheet.write_formula(current_row, col_idx, formula)
-                    elif col_name == "Total":
-                        # Total for Chat Agent = Closed - In Progress (same row)
-                        worksheet.write_formula(current_row, col_idx, f"=B{current_row+1}-C{current_row+1}")
-                    else:
-                        worksheet.write(current_row, col_idx, 0)
-                row_idx = current_row
-            
-            # Write handler rows with formulas
-            start_handler_row = row_idx + 1 if (chat_agent_info and chat_agent_info.get('enabled')) else row_idx + 1
+            # Write handler rows with formulas (Chat Agent is included in handler_list as regular handler)
+            start_handler_row = row_idx + 1
             for handler_row_idx, handler in enumerate(handler_list, start_handler_row):
                 row_idx = handler_row_idx
                 worksheet.write(row_idx, 0, handler)
@@ -7909,8 +7915,8 @@ class FinalProcessor:
                         handler_sheet_name = f"{handler}'s Cases"
                         escaped_sheet_name = handler_sheet_name.replace("'", "''")
                         excel_sheet_name = f"'{escaped_sheet_name}'"
-                        # P = Final Action, R = Status, using Counter!$C$3 for in_progress criteria
-                        formula = f"=COUNTIFS({excel_sheet_name}!P:P,\"Sent Email\",{excel_sheet_name}!R:R,Counter!$C$3)"
+                        # P = Final Action, R = Status, count where Status = "in_progress"
+                        formula = f"=COUNTIFS({excel_sheet_name}!P:P,\"Sent Email\",{excel_sheet_name}!R:R,\"in_progress\")"
                         worksheet.write_formula(row_idx, col_idx, formula)
                     else:
                         # Create dynamic handler sheet name with proper Excel escaping
@@ -7920,20 +7926,32 @@ class FinalProcessor:
                         excel_sheet_name = f"'{escaped_sheet_name}'"
                         
                         if col_name == "closed":
-                            # Use Counter!$B$3 which contains "closed"
-                            formula = f"=COUNTIFS({excel_sheet_name}!R:R,Counter!$B$3,{excel_sheet_name}!Q:Q,Counter!A{row_idx+1})"
+                            # For Chat Agent sheet, count all without Assigned To filter (has different handlers inside)
+                            if handler == chat_agent_name or 'Chat Agent' in handler:
+                                formula = f"=COUNTIF({excel_sheet_name}!R:R,\"closed\")"
+                            else:
+                                # For regular handler sheets, filter by Assigned To
+                                formula = f"=COUNTIFS({excel_sheet_name}!R:R,\"closed\",{excel_sheet_name}!Q:Q,Counter!A{row_idx+1})"
                         elif col_name == "in_progress":
-                            # Use Counter!$C$3 which contains "in_progress"
-                            formula = f"=COUNTIFS({excel_sheet_name}!R:R,Counter!$C$3,{excel_sheet_name}!Q:Q,Counter!A{row_idx+1})"
+                            if handler == chat_agent_name or 'Chat Agent' in handler:
+                                formula = f"=COUNTIF({excel_sheet_name}!R:R,\"in_progress\")"
+                            else:
+                                formula = f"=COUNTIFS({excel_sheet_name}!R:R,\"in_progress\",{excel_sheet_name}!Q:Q,Counter!A{row_idx+1})"
                         elif col_name == "new":
-                            # Use Counter!$D$3 which contains "new"
-                            formula = f"=COUNTIFS({excel_sheet_name}!R:R,Counter!$D$3,{excel_sheet_name}!Q:Q,Counter!A{row_idx+1})"
+                            if handler == chat_agent_name or 'Chat Agent' in handler:
+                                formula = f"=COUNTIF({excel_sheet_name}!R:R,\"new\")"
+                            else:
+                                formula = f"=COUNTIFS({excel_sheet_name}!R:R,\"new\",{excel_sheet_name}!Q:Q,Counter!A{row_idx+1})"
                         elif col_name == "Skipped":
-                            # Use Counter!$E$3 which contains "Skipped"
-                            formula = f"=COUNTIFS({excel_sheet_name}!R:R,Counter!$E$3,{excel_sheet_name}!Q:Q,Counter!A{row_idx+1})"
+                            if handler == chat_agent_name or 'Chat Agent' in handler:
+                                formula = f"=COUNTIF({excel_sheet_name}!R:R,\"Skipped\")"
+                            else:
+                                formula = f"=COUNTIFS({excel_sheet_name}!R:R,\"Skipped\",{excel_sheet_name}!Q:Q,Counter!A{row_idx+1})"
                         elif col_name == "In Progress Today":
-                            # Use Counter!$F$3 which contains "In Progress Today"
-                            formula = f"=COUNTIFS({excel_sheet_name}!R:R,Counter!$F$3,{excel_sheet_name}!Q:Q,Counter!A{row_idx+1})"
+                            if handler == chat_agent_name or 'Chat Agent' in handler:
+                                formula = f"=COUNTIF({excel_sheet_name}!R:R,\"In Progress Today\")"
+                            else:
+                                formula = f"=COUNTIFS({excel_sheet_name}!R:R,\"In Progress Today\",{excel_sheet_name}!Q:Q,Counter!A{row_idx+1})"
                         else:
                             formula = ""
                         worksheet.write_formula(row_idx, col_idx, formula)
@@ -7942,9 +7960,8 @@ class FinalProcessor:
             # Write totals row
             worksheet.write(row_idx+1, 0, 'Total')
             for col_idx in range(1, len(progress_columns)+1):
-                # Sum from row 4 (first data row) to row_idx+1 (last data row)
-                # Note: row 3 is criteria, row 4+ are data (worksheetrows 2, 3+)
-                worksheet.write_formula(row_idx+1, col_idx, f"=SUM({chr(66+col_idx-1)}4:{chr(66+col_idx-1)}{row_idx+1})")
+                # Sum from row 3 (first data row) to row_idx+1 (last data row)
+                worksheet.write_formula(row_idx+1, col_idx, f"=SUM({chr(66+col_idx-1)}3:{chr(66+col_idx-1)}{row_idx+1})")
             self.logger.info("Progress Counter table created with Excel formulas (reading from individual handler sheets)")
 
             # --- Final Action Counter Table ---
