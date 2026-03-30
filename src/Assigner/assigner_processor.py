@@ -3156,8 +3156,14 @@ class FileProcessor:
             # ============================================================
             if 'Assigned To' in df.columns and not merged_chat_agent_df.empty:
                 if case_col and case_col in merged_chat_agent_df.columns and case_col in df.columns:
-                    chat_agent_case_numbers = set(merged_chat_agent_df[case_col].astype(str).unique())
-                    df['_temp_cn'] = df[case_col].astype(str)
+                    def _norm_cn(v):
+                        try:
+                            return str(int(float(str(v).strip())))
+                        except:
+                            return str(v).strip()
+                            
+                    chat_agent_case_numbers = set(merged_chat_agent_df[case_col].apply(_norm_cn).unique())
+                    df['_temp_cn'] = df[case_col].apply(_norm_cn)
                     chat_agent_mask = df['_temp_cn'].isin(chat_agent_case_numbers)
                     removed_count = chat_agent_mask.sum()
                     
@@ -5429,8 +5435,8 @@ class FinalProcessor:
                         self.auto_adjust_columns(writer, empty_chat_agent_df, sheet_name)
                         self.logger.info(f"✓ Created '{sheet_name}' with 0 cases (empty sheet with headers preserved)")
                     
-                    # Lock the sheet (for both empty and non-empty)
-                    self.protect_worksheet(writer, sheet_name, password='artadmin')
+                    # Do NOT lock the Chat Agent sheet as requested by user
+                    pass
 
                 # 4.1.5: Create Companies sheet (email duplicates - preserved across runs)
                 # Positioned right after handler sheets as requested
