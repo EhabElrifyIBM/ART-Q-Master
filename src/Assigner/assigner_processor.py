@@ -5380,6 +5380,25 @@ class FinalProcessor:
                 output_df = merged_output_df  # Use merged data for all subsequent processing
             else:
                 self.logger.info("No previous data to merge - using current data only")
+                
+            # CRITICAL FIX: Force-remove Chat Agent cases from main output_df 
+            # because they might have been resurrected by the merge with previous data
+            if chat_agent_sheet_df is not None and not chat_agent_sheet_df.empty and 'Case Number' in chat_agent_sheet_df.columns and 'Case Number' in output_df.columns:
+                def _norm_cn_merge(v):
+                    try:
+                        return str(int(float(str(v).strip())))
+                    except:
+                        return str(v).strip()
+                
+                chat_agent_case_numbers = set(chat_agent_sheet_df['Case Number'].apply(_norm_cn_merge).unique())
+                output_df['_temp_cn'] = output_df['Case Number'].apply(_norm_cn_merge)
+                chat_agent_mask = output_df['_temp_cn'].isin(chat_agent_case_numbers)
+                resurrected_count = chat_agent_mask.sum()
+                
+                if resurrected_count > 0:
+                    output_df = output_df[~chat_agent_mask].copy()
+                    self.logger.info(f"CRITICAL: Removed {resurrected_count} Chat Agent cases that were resurrected by the merge")
+                output_df = output_df.drop(columns=['_temp_cn'], errors='ignore')
 
             # STEP 3: Apply business rules (only specific updates, preserve handler work)
             self.logger.info("=== STEP 3: APPLYING BUSINESS RULES (PRESERVING HANDLER WORK) ===")
