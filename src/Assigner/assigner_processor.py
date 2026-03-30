@@ -2952,10 +2952,18 @@ class FileProcessor:
                     self.logger.info(f"  {handler}: 0 cases (no rows)")
                     continue
                 
-                # Normalize status for matching
+                # Sort handler's cases by status (same order as handler sheet: new→in_progress→closed)
+                # This ensures "bottom" = last in_progress cases in the sorted handler sheet
+                status_order = {'new': 1, 'in_progress': 2, 'in progress': 2, 'skipped': 3, 'closed': 4}
+                handler_rows['_sort'] = handler_rows['Status'].astype(str).str.strip().str.lower().map(
+                    lambda s: status_order.get(s.replace(' ', '_'), 999)
+                )
+                handler_rows = handler_rows.sort_values(['_sort', 'Case Number']).drop(columns=['_sort'])
+                
+                # Now find in_progress indices in the SORTED order
                 status_norm = handler_rows['Status'].astype(str).str.strip().str.lower().str.replace(r'[\s_]+', '_', regex=True)
                 ip_mask = (status_norm == 'in_progress')
-                ip_indices = handler_rows[ip_mask].index.tolist()
+                ip_indices = handler_rows[ip_mask].index.tolist()  # indices in sorted order
                 count = len(ip_indices)
                 handler_in_progress_info[handler] = {'count': count, 'indices': ip_indices}
                 total_in_progress += count
@@ -5388,7 +5396,7 @@ class FinalProcessor:
                 
                 # 4.1: Create individual handler sheets FIRST (each handler gets their own sheet)
                 self.logger.info("=== 4.1: CREATING INDIVIDUAL HANDLER SHEETS ===")
-                self.create_handler_sheets_from_processed_data(writer, output_df, prev_file=prev_file, chat_agent_info=chat_agent_info, selected_handlers=selected_handlers)
+                self.create_handler_sheets_from_processed_data(writer, output_df, prev_file=prev_file, chat_agent_info=chat_agent_info, selected_handlers=selected_handlers, chat_agent_sheet_df=chat_agent_sheet_df)
 
                 # 4.1.2: Create Chat Agent's Cases sheet (if Chat Agent enabled)
                 # ====== CRITICAL RULE: Sheet name is ALWAYS "Chat Agent's Cases" (fixed) ======
@@ -6518,7 +6526,7 @@ class FinalProcessor:
             self.logger.error(f"Error sorting cases by status: {str(e)}")
             return df
 
-    def create_handler_sheets_from_processed_data(self, writer, processed_df, prev_file=None, chat_agent_info=None, selected_handlers=None):
+    def create_handler_sheets_from_processed_data(self, writer, processed_df, prev_file=None, chat_agent_info=None, selected_handlers=None, chat_agent_sheet_df=None):
         """Create individual handler sheets from the fully processed data (excluding Chat Agent cases)"""
         try:
             self.logger.info("Creating individual handler sheets from processed data...")
@@ -6633,16 +6641,31 @@ class FinalProcessor:
                         ).astype('Int64')
                         new_cases = new_cases.dropna(subset=['Case Number'])
 
-                    # Preserved cases from previous handler sheets (also exclude Companies cases)
+                    # Preserved cases from previous handler sheets (also exclude Companies + Chat Agent cases)
                     prev_cases = prev_handler_data.get(handler, pd.DataFrame()).copy()
                     if not prev_cases.empty and 'Case Number' in prev_cases.columns:
                         prev_cases['Case Number'] = prev_cases['Case Number'].apply(
                             lambda v: int(float(str(v).strip())) if pd.notna(v) and str(v).strip() != '' and str(v).strip().replace('.','',1).isdigit() else pd.NA
                         ).astype('Int64')
                         prev_cases = prev_cases.dropna(subset=['Case Number'])
-                        # Exclude Companies cases from preserved handler data too
+                        # Exclude Companies cases from preserved handler data
                         if prev_companies_case_nums:
                             prev_cases = prev_cases[~prev_cases['Case Number'].isin(prev_companies_case_nums)].copy()
+                        # CRITICAL: Exclude Chat Agent cases from preserved handler data
+                        # Cases pulled to Chat Agent should NOT reappear in handler sheets
+                        if chat_agent_sheet_df is not None and not chat_agent_sheet_df.empty and 'Case Number' in chat_agent_sheet_df.columns:
+                            chat_agent_case_nums = set()
+                            for cn in chat_agent_sheet_df['Case Number'].dropna():
+                                try:
+                                    chat_agent_case_nums.add(int(float(str(cn).strip())))
+                                except (ValueError, TypeError):
+                                    pass
+                            if chat_agent_case_nums:
+                                before_count = len(prev_cases)
+                                prev_cases = prev_cases[~prev_cases['Case Number'].isin(chat_agent_case_nums)].copy()
+                                excluded = before_count - len(prev_cases)
+                                if excluded > 0:
+                                    self.logger.info(f"    Excluded {excluded} Chat Agent cases from {handler}'s preserved cases")
                         prev_cases['Assigned To'] = handler
                     else:
                         prev_cases = pd.DataFrame()
