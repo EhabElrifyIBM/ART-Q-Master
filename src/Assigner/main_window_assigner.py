@@ -314,7 +314,7 @@ class MainWindow(QMainWindow):
         """)
         
         # Version label
-        version_label = QLabel("v0.1.0")
+        version_label = QLabel("v0.2.0")
         version_label.setStyleSheet("""
             QLabel {
                 color: white;

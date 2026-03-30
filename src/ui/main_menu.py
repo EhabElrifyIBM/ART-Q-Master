@@ -7,8 +7,8 @@ import os
 import sys
 import subprocess
 
-# Import the existing MainWindow (Assigner) to open when Assigner button is clicked
-from .main_window import MainWindow
+# Import the new MainWindow (Assigner) from main_window_assigner
+from Assigner.main_window_assigner import MainWindow
 
 
 class MainMenu(QMainWindow):
