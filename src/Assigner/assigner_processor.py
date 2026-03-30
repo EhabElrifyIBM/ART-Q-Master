@@ -2867,22 +2867,81 @@ class FileProcessor:
             active_handlers = [h for h in selected_handlers if h != chat_agent_supporter_name]
             self.logger.info(f"\nActive handlers (for distribution): {active_handlers}")
             
-            # Identify status columns
-            status_cols = [col for col in df.columns if 'status' in col.lower()]
-            if not status_cols:
-                self.logger.warning("No status columns found - cannot process chat agent")
-                return df, pd.DataFrame()
-            
-            # STEP 1: Count in_progress cases in each active handler
-            # Match status values flexibly: "in_progress", "in progress", "In_Progress", etc.
-            self.logger.info(f"\n--- STEP 1: Count 'in_progress' cases in each handler ---")
-            self.logger.info(f"Available status columns: {status_cols}")
-            
-            # Ensure Status column exists
             if 'Status' not in df.columns:
-                self.logger.warning("Status column not found in dataframe - cannot pull cases for Chat Agent")
+                self.logger.warning("Status column not found in dataframe - cannot process chat agent")
                 return df, pd.DataFrame()
             
+            CHAT_AGENT_SHEET_NAME = "Chat Agent's Cases"
+            
+            # ============================================================
+            # STEP 0: Fix Status column from previous handler sheets
+            # 
+            # ROOT CAUSE FIX: format_output_data() sets Status='new' for ALL
+            # cases, then only restores from the FIRST sheet of prev_file.
+            # We must read ALL handler sheets (XXXX's Cases) to get correct
+            # status values for each handler's cases.
+            # ============================================================
+            self.logger.info(f"\n--- STEP 0: Restore Status values from previous handler sheets ---")
+            
+            if prev_file and os.path.exists(prev_file):
+                try:
+                    prev_excel = pd.ExcelFile(prev_file)
+                    handler_sheets = [s for s in prev_excel.sheet_names
+                                      if isinstance(s, str) and s.endswith("'s Cases")
+                                      and s != CHAT_AGENT_SHEET_NAME]
+                    
+                    self.logger.info(f"  Found {len(handler_sheets)} handler sheets in prev_file: {handler_sheets}")
+                    
+                    status_updates = 0
+                    for sheet_name in handler_sheets:
+                        try:
+                            sheet_df = pd.read_excel(prev_file, sheet_name=sheet_name)
+                            if 'Case Number' not in sheet_df.columns or 'Status' not in sheet_df.columns:
+                                continue
+                            
+                            # Normalize case numbers in sheet
+                            sheet_df['_cn'] = sheet_df['Case Number'].apply(self.normalize_case_number)
+                            sheet_df['_cn'] = pd.to_numeric(sheet_df['_cn'], errors='coerce').astype('Int64')
+                            
+                            sheet_updates = 0
+                            for _, row in sheet_df.dropna(subset=['_cn']).iterrows():
+                                case_num = row['_cn']
+                                prev_status = str(row['Status']).strip()
+                                if not prev_status or prev_status.lower() in ('', 'nan', 'none'):
+                                    continue
+                                
+                                mask = df['Case Number'] == case_num
+                                if mask.any():
+                                    current_status = str(df.loc[mask.idxmax(), 'Status']).strip().lower()
+                                    # Update if current is 'new' but prev has a real status
+                                    if current_status == 'new' and prev_status.lower() != 'new':
+                                        df.loc[mask, 'Status'] = prev_status
+                                        status_updates += 1
+                                        sheet_updates += 1
+                            
+                            handler_name = sheet_name.replace("'s Cases", '')
+                            if sheet_updates > 0:
+                                self.logger.info(f"  {handler_name}: restored {sheet_updates} statuses from prev sheet")
+                        except Exception as sheet_err:
+                            self.logger.warning(f"  Could not read {sheet_name}: {str(sheet_err)}")
+                            continue
+                    
+                    self.logger.info(f"  TOTAL: Restored {status_updates} Status values from previous handler sheets")
+                except Exception as e:
+                    self.logger.warning(f"  Could not restore statuses from handler sheets: {str(e)}")
+            else:
+                self.logger.info("  No previous file - all cases will have their current Status values")
+            
+            # Also ensure "in progress today" is converted to "in_progress"
+            ipt_mask = df['Status'].astype(str).str.strip().str.lower() == 'in progress today'
+            if ipt_mask.sum() > 0:
+                df.loc[ipt_mask, 'Status'] = 'in_progress'
+                self.logger.info(f"  Converted {ipt_mask.sum()} 'in progress today' → 'in_progress'")
+            
+            # ============================================================
+            # STEP 1: Count in_progress per handler (using FIXED Status)
+            # ============================================================
+            self.logger.info(f"\n--- STEP 1: Count in_progress cases per handler (after status fix) ---")
             handler_in_progress_info = {}
             total_in_progress = 0
             
@@ -2890,255 +2949,204 @@ class FileProcessor:
                 handler_rows = df[df['Assigned To'] == handler].copy()
                 if handler_rows.empty:
                     handler_in_progress_info[handler] = {'count': 0, 'indices': []}
-                    self.logger.info(f"  {handler}: No cases found")
+                    self.logger.info(f"  {handler}: 0 cases (no rows)")
                     continue
                 
-                # Match in_progress flexibly (handles "in_progress", "in progress", etc.)
-                status_normalized = handler_rows['Status'].astype(str).str.strip().str.lower().str.replace(r'[\s_]+', '_', regex=True)
-                in_progress_mask = (status_normalized == 'in_progress')
-                
-                in_progress_indices = handler_rows[in_progress_mask].index.tolist()
-                count = len(in_progress_indices)
-                handler_in_progress_info[handler] = {'count': count, 'indices': in_progress_indices}
+                # Normalize status for matching
+                status_norm = handler_rows['Status'].astype(str).str.strip().str.lower().str.replace(r'[\s_]+', '_', regex=True)
+                ip_mask = (status_norm == 'in_progress')
+                ip_indices = handler_rows[ip_mask].index.tolist()
+                count = len(ip_indices)
+                handler_in_progress_info[handler] = {'count': count, 'indices': ip_indices}
                 total_in_progress += count
                 
-                # Also log unique status values for debugging
                 unique_statuses = handler_rows['Status'].astype(str).str.strip().unique().tolist()
-                self.logger.info(f"  {handler}: {count} in_progress cases (out of {len(handler_rows)} total) | statuses: {unique_statuses}")
-                if count > 0:
-                    sample_cases = handler_rows.loc[in_progress_indices[:3], 'Case Number'].tolist() if 'Case Number' in handler_rows.columns else []
-                    self.logger.info(f"    Sample cases: {sample_cases}")
+                self.logger.info(f"  {handler}: {count} in_progress (out of {len(handler_rows)} total) | statuses: {unique_statuses}")
             
-            self.logger.info(f"Total in_progress cases across all handlers: {total_in_progress}")
+            self.logger.info(f"  TOTAL in_progress across all handlers: {total_in_progress}")
             
-            # STEP 2: Load and preserve previous Chat Agent sheet FIRST (ALWAYS preserve)
-            # ====== CRITICAL RULE: Always use fixed sheet name "Chat Agent's Cases" ======
-            # Regardless of supporter name, the sheet is always named "Chat Agent's Cases"
-            # This ensures we can find and preserve previous Chat Agent cases
-            self.logger.info(f"\n--- STEP 2: Load and preserve previous Chat Agent cases (ALWAYS preserve) ---")
-            self.logger.info(f"RULE: Chat Agent sheet name is ALWAYS 'Chat Agent's Cases' (fixed, not supporter-dependent)")
+            # ============================================================
+            # STEP 2: Load previous Chat Agent sheet (preserve ALL previous work)
+            # ============================================================
+            self.logger.info(f"\n--- STEP 2: Load & preserve previous Chat Agent sheet ---")
             prev_chat_agent_df = pd.DataFrame()
-            CHAT_AGENT_SHEET_NAME = "Chat Agent's Cases"  # <-- FIXED SHEET NAME
             
             if prev_file and os.path.exists(prev_file):
                 try:
                     excel_file = pd.ExcelFile(prev_file)
                     if CHAT_AGENT_SHEET_NAME in excel_file.sheet_names:
                         prev_chat_agent_df = pd.read_excel(prev_file, sheet_name=CHAT_AGENT_SHEET_NAME)
-                        self.logger.info(f"✓ Loaded {len(prev_chat_agent_df)} cases from previous '{CHAT_AGENT_SHEET_NAME}' sheet")
-                        
-                        # RULE: Preserve original "Assigned To" values from previous file
-                        self.logger.info(f"RULE: ALL previous cases keep their ORIGINAL 'Assigned To' values (untouched)")
+                        self.logger.info(f"  ✓ Loaded {len(prev_chat_agent_df)} previous Chat Agent cases")
                         if 'Assigned To' in prev_chat_agent_df.columns:
-                            prev_assigned_to_counts = prev_chat_agent_df['Assigned To'].value_counts()
-                            self.logger.info(f"Previous 'Assigned To' distribution: {prev_assigned_to_counts.to_dict()}")
-                        
-                        # Log status breakdown of previous cases
-                        for status_col in status_cols:
-                            if status_col in prev_chat_agent_df.columns:
-                                status_counts = prev_chat_agent_df[status_col].value_counts()
-                                self.logger.info(f"  Previous statuses ({status_col}): {status_counts.to_dict()}")
+                            self.logger.info(f"    Assigned To: {prev_chat_agent_df['Assigned To'].value_counts().to_dict()}")
+                        if 'Status' in prev_chat_agent_df.columns:
+                            self.logger.info(f"    Statuses: {prev_chat_agent_df['Status'].value_counts().to_dict()}")
                     else:
-                        self.logger.info(f"No previous '{CHAT_AGENT_SHEET_NAME}' sheet found - this is a fresh Chat Agent")
+                        self.logger.info(f"  No previous '{CHAT_AGENT_SHEET_NAME}' sheet found")
                 except Exception as e:
-                    self.logger.warning(f"Could not load previous Chat Agent sheet: {str(e)}")
-            else:
-                self.logger.info("No previous file found - starting with fresh Chat Agent sheet")
+                    self.logger.warning(f"  Could not load previous Chat Agent sheet: {str(e)}")
             
-            # If no in_progress cases and no previous cases, return empty
+            # Handle edge cases
             if total_in_progress == 0 and prev_chat_agent_df.empty:
-                self.logger.info("No in_progress cases and no previous cases found - Chat Agent sheet will be empty")
+                self.logger.info("No in_progress cases and no previous Chat Agent cases → empty sheet")
                 return df, pd.DataFrame()
             
-            # If no in_progress cases but have previous cases, return previous cases preserved
             if total_in_progress == 0:
-                self.logger.info(f"No new in_progress cases - returning {len(prev_chat_agent_df)} previous cases (all preserved untouched)")
+                self.logger.info(f"No in_progress cases to redistribute → returning {len(prev_chat_agent_df)} preserved previous cases")
                 return df, prev_chat_agent_df
             
-            # STEP 3: Calculate Chat Agent's fair share
-            # Formula: fair_share = total_in_progress / (num_handlers + 1)
-            # Chat Agent is the "+1" — gets one equal share of the total pool
+            # ============================================================
+            # STEP 3: Calculate distribution
+            #   fair_share = total_in_progress / (num_handlers + 1)
+            #   chat_agent_quota = ceil(fair_share * 1.15) (115%)
+            #   handler_target = floor(fair_share)         (100%)
+            #   Each handler gives excess above handler_target to Chat Agent
+            # ============================================================
             num_handlers = len(active_handlers)
-            chat_agent_target = total_in_progress // (num_handlers + 1)
+            fair_share = total_in_progress / (num_handlers + 1)
+            chat_agent_quota = math.ceil(fair_share * 1.15)
+            handler_target = int(fair_share)  # floor — what each handler should keep
             
-            self.logger.info(f"\n--- STEP 3: Calculate Chat Agent's fair share ---")
-            self.logger.info(f"  Total in_progress across all handlers: {total_in_progress}")
-            self.logger.info(f"  Active handlers (excl. Chat Agent): {num_handlers}")
-            self.logger.info(f"  Fair share = {total_in_progress} / ({num_handlers} + 1) = {chat_agent_target}")
+            self.logger.info(f"\n--- STEP 3: Distribution Calculation ---")
+            self.logger.info(f"  Total in_progress across handlers: {total_in_progress}")
+            self.logger.info(f"  Active handlers: {num_handlers}")
+            self.logger.info(f"  Fair share = {total_in_progress} / ({num_handlers} + 1) = {fair_share:.1f}")
+            self.logger.info(f"  Chat Agent quota (115%) = ceil({fair_share:.1f} × 1.15) = {chat_agent_quota}")
+            self.logger.info(f"  Handler target (100%) = floor({fair_share:.1f}) = {handler_target}")
             
-            if chat_agent_target == 0:
-                self.logger.info("Chat Agent target is 0 — not enough cases to pull")
+            if chat_agent_quota == 0:
+                self.logger.info("Chat Agent quota is 0 → not enough cases")
                 if not prev_chat_agent_df.empty:
-                    self.logger.info(f"Returning {len(prev_chat_agent_df)} previous cases (preserved)")
                     return df, prev_chat_agent_df
                 return df, pd.DataFrame()
             
-            # STEP 4: Distribute the pull across handlers proportionally
-            # Each handler contributes proportionally to their share of the total in_progress pool
-            self.logger.info(f"\n--- STEP 4: Pull {chat_agent_target} cases from bottom of handlers ---")
+            # ============================================================
+            # STEP 4: Pull excess from each handler (from bottom)
+            #   excess = handler_ip_count - handler_target
+            #   Pull excess cases from bottom of handler's sorted queue
+            # ============================================================
+            self.logger.info(f"\n--- STEP 4: Pull excess cases from handlers ---")
             chat_agent_cases_to_add = []
             cases_pulled_per_handler = {}
-            remaining_to_pull = chat_agent_target
+            remaining_quota = chat_agent_quota
             
-            # Sort handlers by their in_progress count (descending) so larger queues contribute more
-            sorted_handlers = sorted(
-                active_handlers,
-                key=lambda h: handler_in_progress_info[h]['count'],
-                reverse=True
-            )
-            
-            for idx, handler in enumerate(sorted_handlers):
-                handler_ip_count = handler_in_progress_info[handler]['count']
-                in_progress_indices = handler_in_progress_info[handler]['indices']
+            for handler in active_handlers:
+                handler_ip = handler_in_progress_info[handler]['count']
+                ip_indices = handler_in_progress_info[handler]['indices']
                 
-                if not in_progress_indices or remaining_to_pull <= 0:
+                if not ip_indices or remaining_quota <= 0:
                     cases_pulled_per_handler[handler] = []
                     continue
                 
-                # Proportional pull: this handler's share of the remaining target
-                # For the last handler, take whatever is left
-                if idx == len(sorted_handlers) - 1:
-                    cases_to_pull = remaining_to_pull
-                else:
-                    # Proportional: handler_ip / total_ip * target (rounded down)
-                    if total_in_progress > 0:
-                        cases_to_pull = max(1, int(handler_ip_count / total_in_progress * chat_agent_target))
-                    else:
-                        cases_to_pull = 0
-                
-                # Don't pull more than this handler has or more than we need
-                cases_to_pull = min(cases_to_pull, handler_ip_count, remaining_to_pull)
-                
-                if cases_to_pull == 0:
+                # Calculate excess: how many above fair target this handler has
+                excess = handler_ip - handler_target
+                if excess <= 0:
                     cases_pulled_per_handler[handler] = []
-                    self.logger.info(f"  {handler}: Pulling 0 (has {handler_ip_count} in_progress)")
+                    self.logger.info(f"  {handler}: No excess (has {handler_ip}, target {handler_target})")
                     continue
                 
-                # Pull from BOTTOM (oldest after sorting) of handler's in_progress queue
-                indices_to_pull = in_progress_indices[-cases_to_pull:]
+                # Pull excess (but not more than remaining quota)
+                cases_to_pull = min(excess, remaining_quota)
                 
-                self.logger.info(f"  {handler}: Pulling {len(indices_to_pull)} from bottom of {handler_ip_count} in_progress cases")
+                # Pull from BOTTOM of handler's in_progress queue (oldest after sorting)
+                indices_to_pull = ip_indices[-cases_to_pull:]
                 
-                # Verify status and pull
+                # Verify each case still has in_progress status
                 verified_indices = []
                 for idx_to_pull in indices_to_pull:
-                    raw_status = df.loc[idx_to_pull, 'Status'] if 'Status' in df.columns else 'unknown'
-                    status_norm = str(raw_status).strip().lower().replace(' ', '_')
-                    if status_norm == 'in_progress':
+                    raw_status = str(df.loc[idx_to_pull, 'Status']).strip().lower().replace(' ', '_')
+                    if raw_status == 'in_progress':
                         verified_indices.append(idx_to_pull)
                     else:
-                        self.logger.warning(f"    Skipping index {idx_to_pull}: Status='{raw_status}' (not in_progress)")
+                        self.logger.warning(f"    Skipping idx {idx_to_pull}: Status='{df.loc[idx_to_pull, 'Status']}' (not in_progress)")
                 
-                # Copy pulled rows and set Assigned To to current Chat Agent supporter name
+                # Copy pulled rows and set Assigned To to Chat Agent supporter name
                 for idx_to_pull in verified_indices:
                     case_row = df.loc[idx_to_pull].copy()
                     case_row['Assigned To'] = chat_agent_supporter_name
                     chat_agent_cases_to_add.append(case_row)
-                    # Update in main df too (so removal step works correctly)
+                    # Also update in main df (so removal step can find them)
                     df.loc[idx_to_pull, 'Assigned To'] = chat_agent_supporter_name
                 
                 cases_pulled_per_handler[handler] = verified_indices
-                remaining_to_pull -= len(verified_indices)
+                remaining_quota -= len(verified_indices)
                 
-                if len(verified_indices) > 0:
-                    pulled_case_nums = df.loc[verified_indices, 'Case Number'].tolist() if 'Case Number' in df.columns else []
-                    self.logger.info(f"    Pulled case numbers: {pulled_case_nums}")
+                pulled_nums = df.loc[verified_indices, 'Case Number'].tolist() if 'Case Number' in df.columns and verified_indices else []
+                self.logger.info(f"  {handler}: Pulled {len(verified_indices)} (had {handler_ip}, excess {excess}, target {handler_target}) | Cases: {pulled_nums}")
             
             total_pulled = len(chat_agent_cases_to_add)
-            self.logger.info(f"\n  TOTAL pulled for Chat Agent: {total_pulled} / {chat_agent_target} target")
+            self.logger.info(f"\n  TOTAL PULLED for Chat Agent: {total_pulled} / {chat_agent_quota} quota")
             self.logger.info(f"  Pull breakdown: {{{', '.join(f'{h}: {len(v)}' for h, v in cases_pulled_per_handler.items())}}}")
             
-            # STEP 4: Merge previous cases (untouched) with new in_progress cases (with new Chat Agent name)
+            # ============================================================
+            # STEP 5: Merge previous (preserved) + new pulled cases
+            # Previous cases keep original Assigned To (untouched)
+            # New cases have Assigned To = current Chat Agent supporter name
+            # ============================================================
+            self.logger.info(f"\n--- STEP 5: Merge previous + new Chat Agent cases ---")
             
-            # STEP 4: Merge previous cases (UNTOUCHED) with new in_progress cases (with NEW Chat Agent name)
-            # ====== CRITICAL RULE: Previous cases ALWAYS keep original "Assigned To", new cases get current Chat Agent name ======
-            self.logger.info(f"\n--- STEP 4: Merge previous cases (untouched) + new in_progress cases (with Chat Agent name) ---")
-            
-            # Convert list of new cases to DataFrame
+            # Build new cases DataFrame
             if chat_agent_cases_to_add:
                 new_chat_agent_df = pd.DataFrame(chat_agent_cases_to_add)
-                self.logger.info(f"✓ Created {len(new_chat_agent_df)} new cases DataFrame")
-                self.logger.info(f"RULE: NEW cases have 'Assigned To' = '{chat_agent_supporter_name}' (current supporter from main window)")
+                self.logger.info(f"  New cases: {len(new_chat_agent_df)} (Assigned To = '{chat_agent_supporter_name}')")
             else:
                 new_chat_agent_df = pd.DataFrame()
-                self.logger.info(f"No new in_progress cases to add")
+                self.logger.info(f"  No new cases pulled")
             
-            # Merge strategy: Start with PREVIOUS cases (untouched), then ADD NEW cases
-            # Find case column for deduplication
+            # Find case number column for deduplication
             case_col = None
-            if not new_chat_agent_df.empty:
-                for col in new_chat_agent_df.columns:
-                    if 'case' in col.lower() and 'number' in col.lower():
-                        case_col = col
-                        break
+            for col in (list(new_chat_agent_df.columns) if not new_chat_agent_df.empty else list(prev_chat_agent_df.columns) if not prev_chat_agent_df.empty else []):
+                if 'case' in col.lower() and 'number' in col.lower():
+                    case_col = col
+                    break
             
+            # Merge: previous (untouched) + new (with updated Assigned To)
             if not prev_chat_agent_df.empty and not new_chat_agent_df.empty and case_col:
-                # Get new case numbers to filter previous
                 new_case_numbers = set(new_chat_agent_df[case_col].astype(str).unique())
-                # Keep only previous cases NOT in new (to avoid duplicates)
+                # Remove duplicates: keep new version over previous
                 prev_not_in_new = prev_chat_agent_df[~prev_chat_agent_df[case_col].astype(str).isin(new_case_numbers)].copy()
-                
-                self.logger.info(f"\n--- Merge strategy: PREVIOUS cases (untouched) + NEW cases (with Chat Agent name) ---")
-                self.logger.info(f"  Previous cases from file (keeping original Assigned To): {len(prev_not_in_new)}")
-                if 'Assigned To' in prev_not_in_new.columns:
-                    prev_assigned_to = prev_not_in_new['Assigned To'].value_counts()
-                    self.logger.info(f"    Previous 'Assigned To' values: {prev_assigned_to.to_dict()}")
-                self.logger.info(f"  New in_progress cases (with Chat Agent name '{chat_agent_supporter_name}'): {len(new_chat_agent_df)}")
-                
-                # RULE: Combine as: PREVIOUS CASES (untouched) + NEW CASES
                 merged_chat_agent_df = pd.concat([prev_not_in_new, new_chat_agent_df], ignore_index=True)
-                self.logger.info(f"  Total combined: {len(merged_chat_agent_df)} cases")
-                
+                self.logger.info(f"  Merged: {len(prev_not_in_new)} previous + {len(new_chat_agent_df)} new = {len(merged_chat_agent_df)} total")
             elif not prev_chat_agent_df.empty and not new_chat_agent_df.empty:
-                # No case column, just concatenate
-                self.logger.info(f"No case column found for deduplication - combining: {len(prev_chat_agent_df)} previous + {len(new_chat_agent_df)} new")
                 merged_chat_agent_df = pd.concat([prev_chat_agent_df, new_chat_agent_df], ignore_index=True)
-                
+                self.logger.info(f"  Concatenated: {len(prev_chat_agent_df)} previous + {len(new_chat_agent_df)} new = {len(merged_chat_agent_df)}")
             elif not prev_chat_agent_df.empty:
-                # Only previous cases
                 merged_chat_agent_df = prev_chat_agent_df
-                self.logger.info(f"Using {len(prev_chat_agent_df)} previous cases (all with original 'Assigned To' values)")
-                
+                self.logger.info(f"  Using {len(prev_chat_agent_df)} previous cases only")
             elif not new_chat_agent_df.empty:
-                # Only new cases
                 merged_chat_agent_df = new_chat_agent_df
-                self.logger.info(f"Using {len(new_chat_agent_df)} new cases (all with Chat Agent name '{chat_agent_supporter_name}')")
-                
+                self.logger.info(f"  Using {len(new_chat_agent_df)} new cases only")
             else:
-                # No cases at all
                 merged_chat_agent_df = pd.DataFrame()
-                self.logger.info("No cases to add (no previous, no new)")
+                self.logger.info("  No cases (no previous, no new)")
             
+            # ============================================================
+            # STEP 6: Sort Chat Agent sheet by Status (in_progress → closed)
+            # ============================================================
+            if not merged_chat_agent_df.empty and 'Status' in merged_chat_agent_df.columns:
+                status_order = {'in_progress': 0, 'in progress': 0, 'In Progress Today': 0,
+                                'new': 1, 'Skipped': 2, 'closed': 3}
+                merged_chat_agent_df['_sort_key'] = merged_chat_agent_df['Status'].astype(str).str.strip().str.lower().str.replace(r'[\s_]+', '_', regex=True).map(
+                    lambda s: status_order.get(s, 2)
+                )
+                merged_chat_agent_df = merged_chat_agent_df.sort_values('_sort_key').drop(columns=['_sort_key']).reset_index(drop=True)
+                self.logger.info(f"  ✓ Sorted Chat Agent sheet by status (in_progress first, then closed)")
+            
+            # Final summary
             self.logger.info(f"\n{'='*70}")
             self.logger.info(f"FINAL CHAT AGENT SHEET: '{CHAT_AGENT_SHEET_NAME}'")
-            self.logger.info(f"Total cases: {len(merged_chat_agent_df)}")
-            
-            # Log final "Assigned To" distribution
+            self.logger.info(f"  Total cases: {len(merged_chat_agent_df)}")
             if not merged_chat_agent_df.empty and 'Assigned To' in merged_chat_agent_df.columns:
-                final_assigned_to = merged_chat_agent_df['Assigned To'].value_counts()
-                self.logger.info(f"Final 'Assigned To' distribution: {final_assigned_to.to_dict()}")
-            
-            # Log status breakdown
-            if not merged_chat_agent_df.empty:
-                for status_col in status_cols:
-                    if status_col in merged_chat_agent_df.columns:
-                        status_counts = merged_chat_agent_df[status_col].value_counts()
-                        self.logger.info(f"Status breakdown ({status_col}): {status_counts.to_dict()}")
-            
+                self.logger.info(f"  Assigned To: {merged_chat_agent_df['Assigned To'].value_counts().to_dict()}")
+            if not merged_chat_agent_df.empty and 'Status' in merged_chat_agent_df.columns:
+                self.logger.info(f"  Statuses: {merged_chat_agent_df['Status'].value_counts().to_dict()}")
             self.logger.info(f"{'='*70}\n")
             
-            # ===== CRITICAL: REMOVE CHAT AGENT CASES FROM MAIN DF =====
-            # RULE: Chat Agent cases should NOT appear in handler sheets
-            # Remove all cases assigned to Chat Agent from main df
-            # so handler sheets only show cases still assigned to original handlers
+            # ============================================================
+            # STEP 7: Remove Chat Agent cases from main df
+            # So handler sheets don't include Chat Agent's cases
+            # ============================================================
             if 'Assigned To' in df.columns and not merged_chat_agent_df.empty:
-                # Get case numbers of Chat Agent cases
-                case_col = None
-                for col in merged_chat_agent_df.columns:
-                    if 'case' in col.lower() and 'number' in col.lower():
-                        case_col = col
-                        break
-                
                 if case_col and case_col in merged_chat_agent_df.columns and case_col in df.columns:
                     chat_agent_case_numbers = set(merged_chat_agent_df[case_col].astype(str).unique())
                     df['_temp_cn'] = df[case_col].astype(str)
@@ -3148,12 +3156,12 @@ class FileProcessor:
                     if removed_count > 0:
                         df = df[~chat_agent_mask].copy()
                         df = df.drop(columns=['_temp_cn'], errors='ignore')
-                        self.logger.info(f"RULE: Removed {removed_count} Chat Agent cases from main df (handler sheets will not include them)")
+                        self.logger.info(f"  Removed {removed_count} Chat Agent cases from main df")
                     else:
                         df = df.drop(columns=['_temp_cn'], errors='ignore')
-                        self.logger.info(f"No Chat Agent cases to remove from main df")
+                        self.logger.info(f"  No Chat Agent cases found in main df to remove")
                 else:
-                    self.logger.warning("Could not find case number column for removal")
+                    self.logger.warning("  Could not find case number column for removal")
             
             return df, merged_chat_agent_df
             
