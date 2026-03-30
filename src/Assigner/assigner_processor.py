@@ -2873,10 +2873,9 @@ class FileProcessor:
                 self.logger.warning("No status columns found - cannot process chat agent")
                 return df, pd.DataFrame()
             
-            # STEP 1: Count EXACTLY "in_progress" status cases in each active handler
-            # RULE: Pull ONLY cases with Status = "in_progress" (exact match, after conversion)
-            self.logger.info(f"\n--- STEP 1: Count 'in_progress' status cases in each handler ---")
-            self.logger.info(f"RULE: Looking for EXACTLY Status = 'in_progress' (after conversion)")
+            # STEP 1: Count in_progress cases in each active handler
+            # Match status values flexibly: "in_progress", "in progress", "In_Progress", etc.
+            self.logger.info(f"\n--- STEP 1: Count 'in_progress' cases in each handler ---")
             self.logger.info(f"Available status columns: {status_cols}")
             
             # Ensure Status column exists
@@ -2894,21 +2893,21 @@ class FileProcessor:
                     self.logger.info(f"  {handler}: No cases found")
                     continue
                 
-                # EXACT MATCH: Check Status column only (primary indicator)
-                in_progress_mask = (
-                    handler_rows['Status'].astype(str).str.strip().str.lower() == 'in_progress'
-                )
+                # Match in_progress flexibly (handles "in_progress", "in progress", etc.)
+                status_normalized = handler_rows['Status'].astype(str).str.strip().str.lower().str.replace(r'[\s_]+', '_', regex=True)
+                in_progress_mask = (status_normalized == 'in_progress')
                 
                 in_progress_indices = handler_rows[in_progress_mask].index.tolist()
                 count = len(in_progress_indices)
                 handler_in_progress_info[handler] = {'count': count, 'indices': in_progress_indices}
                 total_in_progress += count
                 
-                self.logger.info(f"  {handler}: {count} 'in_progress' cases found (out of {len(handler_rows)} total)")
+                # Also log unique status values for debugging
+                unique_statuses = handler_rows['Status'].astype(str).str.strip().unique().tolist()
+                self.logger.info(f"  {handler}: {count} in_progress cases (out of {len(handler_rows)} total) | statuses: {unique_statuses}")
                 if count > 0:
-                    # Log sample (max 3)
                     sample_cases = handler_rows.loc[in_progress_indices[:3], 'Case Number'].tolist() if 'Case Number' in handler_rows.columns else []
-                    self.logger.info(f"    Sample: {sample_cases}")
+                    self.logger.info(f"    Sample cases: {sample_cases}")
             
             self.logger.info(f"Total in_progress cases across all handlers: {total_in_progress}")
             
@@ -2956,60 +2955,98 @@ class FileProcessor:
                 self.logger.info(f"No new in_progress cases - returning {len(prev_chat_agent_df)} previous cases (all preserved untouched)")
                 return df, prev_chat_agent_df
             
-            # STEP 3: Calculate cases per handler to pull for Chat Agent
-            cases_per_handler = total_in_progress // len(active_handlers)
-            remainder = total_in_progress % len(active_handlers)
+            # STEP 3: Calculate Chat Agent's fair share
+            # Formula: fair_share = total_in_progress / (num_handlers + 1)
+            # Chat Agent is the "+1" — gets one equal share of the total pool
+            num_handlers = len(active_handlers)
+            chat_agent_target = total_in_progress // (num_handlers + 1)
             
-            self.logger.info(f"\n--- STEP 2: Calculate cases to pull from each handler ---")
-            self.logger.info(f"Total in_progress cases: {total_in_progress}")
-            self.logger.info(f"Active handlers: {len(active_handlers)}")
-            self.logger.info(f"Cases per handler: {cases_per_handler}")
-            self.logger.info(f"Remainder: {remainder}")
+            self.logger.info(f"\n--- STEP 3: Calculate Chat Agent's fair share ---")
+            self.logger.info(f"  Total in_progress across all handlers: {total_in_progress}")
+            self.logger.info(f"  Active handlers (excl. Chat Agent): {num_handlers}")
+            self.logger.info(f"  Fair share = {total_in_progress} / ({num_handlers} + 1) = {chat_agent_target}")
             
-            # STEP 3: Pull cases from BOTTOM (newest) of each handler's EXACT "in_progress" queue ONLY
-            self.logger.info(f"\n--- STEP 3: Pull cases from BOTTOM of 'in_progress' only ---")
-            self.logger.info(f"RULE: Pull ONLY from Status='in_progress' (reject 'new', 'closed', 'in_progress today', etc)")
+            if chat_agent_target == 0:
+                self.logger.info("Chat Agent target is 0 — not enough cases to pull")
+                if not prev_chat_agent_df.empty:
+                    self.logger.info(f"Returning {len(prev_chat_agent_df)} previous cases (preserved)")
+                    return df, prev_chat_agent_df
+                return df, pd.DataFrame()
+            
+            # STEP 4: Distribute the pull across handlers proportionally
+            # Each handler contributes proportionally to their share of the total in_progress pool
+            self.logger.info(f"\n--- STEP 4: Pull {chat_agent_target} cases from bottom of handlers ---")
             chat_agent_cases_to_add = []
             cases_pulled_per_handler = {}
+            remaining_to_pull = chat_agent_target
             
-            for idx, handler in enumerate(active_handlers):
-                # Calculate how many to pull from this handler
-                cases_to_pull = cases_per_handler + (1 if idx < remainder else 0)
+            # Sort handlers by their in_progress count (descending) so larger queues contribute more
+            sorted_handlers = sorted(
+                active_handlers,
+                key=lambda h: handler_in_progress_info[h]['count'],
+                reverse=True
+            )
+            
+            for idx, handler in enumerate(sorted_handlers):
+                handler_ip_count = handler_in_progress_info[handler]['count']
                 in_progress_indices = handler_in_progress_info[handler]['indices']
                 
-                if not in_progress_indices or cases_to_pull == 0:
+                if not in_progress_indices or remaining_to_pull <= 0:
                     cases_pulled_per_handler[handler] = []
-                    self.logger.info(f"  {handler}: Pulling 0 cases (none available or not needed)")
                     continue
                 
-                # Pull from BOTTOM (newest/last) - reverse and take from start
-                # Bottom means the END of the list in df order
-                indices_to_pull = in_progress_indices[-cases_to_pull:] if len(in_progress_indices) >= cases_to_pull else in_progress_indices
+                # Proportional pull: this handler's share of the remaining target
+                # For the last handler, take whatever is left
+                if idx == len(sorted_handlers) - 1:
+                    cases_to_pull = remaining_to_pull
+                else:
+                    # Proportional: handler_ip / total_ip * target (rounded down)
+                    if total_in_progress > 0:
+                        cases_to_pull = max(1, int(handler_ip_count / total_in_progress * chat_agent_target))
+                    else:
+                        cases_to_pull = 0
                 
-                self.logger.info(f"  {handler}: Pulling {len(indices_to_pull)} from {len(in_progress_indices)} 'in_progress' cases")
+                # Don't pull more than this handler has or more than we need
+                cases_to_pull = min(cases_to_pull, handler_ip_count, remaining_to_pull)
                 
-                # Verify all pulled cases have Status="in_progress" before assigning
+                if cases_to_pull == 0:
+                    cases_pulled_per_handler[handler] = []
+                    self.logger.info(f"  {handler}: Pulling 0 (has {handler_ip_count} in_progress)")
+                    continue
+                
+                # Pull from BOTTOM (oldest after sorting) of handler's in_progress queue
+                indices_to_pull = in_progress_indices[-cases_to_pull:]
+                
+                self.logger.info(f"  {handler}: Pulling {len(indices_to_pull)} from bottom of {handler_ip_count} in_progress cases")
+                
+                # Verify status and pull
                 verified_indices = []
                 for idx_to_pull in indices_to_pull:
-                    case_status = df.loc[idx_to_pull, 'Status'] if 'Status' in df.columns else 'unknown'
-                    if str(case_status).strip().lower() == 'in_progress':
+                    raw_status = df.loc[idx_to_pull, 'Status'] if 'Status' in df.columns else 'unknown'
+                    status_norm = str(raw_status).strip().lower().replace(' ', '_')
+                    if status_norm == 'in_progress':
                         verified_indices.append(idx_to_pull)
                     else:
-                        self.logger.warning(f"    Skipping case {idx_to_pull}: Status='{case_status}' (not 'in_progress')")
+                        self.logger.warning(f"    Skipping index {idx_to_pull}: Status='{raw_status}' (not in_progress)")
                 
-                # Copy these rows and change "Assigned To" to Chat Agent (NEW CASES ONLY)
+                # Copy pulled rows and set Assigned To to current Chat Agent supporter name
                 for idx_to_pull in verified_indices:
                     case_row = df.loc[idx_to_pull].copy()
-                    # RULE: NEW cases get CURRENT Chat Agent name in "Assigned To"
                     case_row['Assigned To'] = chat_agent_supporter_name
                     chat_agent_cases_to_add.append(case_row)
-                    # Also update in main df
+                    # Update in main df too (so removal step works correctly)
                     df.loc[idx_to_pull, 'Assigned To'] = chat_agent_supporter_name
                 
                 cases_pulled_per_handler[handler] = verified_indices
+                remaining_to_pull -= len(verified_indices)
+                
+                if len(verified_indices) > 0:
+                    pulled_case_nums = df.loc[verified_indices, 'Case Number'].tolist() if 'Case Number' in df.columns else []
+                    self.logger.info(f"    Pulled case numbers: {pulled_case_nums}")
             
             total_pulled = len(chat_agent_cases_to_add)
-            self.logger.info(f"Total cases pulled for Chat Agent: {total_pulled}")
+            self.logger.info(f"\n  TOTAL pulled for Chat Agent: {total_pulled} / {chat_agent_target} target")
+            self.logger.info(f"  Pull breakdown: {{{', '.join(f'{h}: {len(v)}' for h, v in cases_pulled_per_handler.items())}}}")
             
             # STEP 4: Merge previous cases (untouched) with new in_progress cases (with new Chat Agent name)
             
@@ -8021,6 +8058,30 @@ class FinalProcessor:
                             formula = ""
                         worksheet.write_formula(row_idx, col_idx, formula)
 
+            # ====== Add Chat Agent row to Progress Counter (counts ALL in Chat Agent's Cases sheet) ======
+            if chat_agent_info and chat_agent_info.get('enabled'):
+                row_idx += 1
+                worksheet.write(row_idx, 0, 'Chat Agent')
+                
+                # Build escaped sheet reference for "Chat Agent's Cases"
+                chat_agent_sheet = "Chat Agent's Cases"
+                escaped_ca = chat_agent_sheet.replace("'", "''")
+                excel_ca_sheet = f"'{escaped_ca}'"
+                
+                # closed: =COUNTIFS('Chat Agent''s Cases'!R:R,$B$2)
+                worksheet.write_formula(row_idx, 1, f"=COUNTIFS({excel_ca_sheet}!R:R,$B$2)")
+                # in_progress: =COUNTIFS('Chat Agent''s Cases'!R:R,$C$2)
+                worksheet.write_formula(row_idx, 2, f"=COUNTIFS({excel_ca_sheet}!R:R,$C$2)")
+                # new: =COUNTIFS('Chat Agent''s Cases'!R:R,$D$2)
+                worksheet.write_formula(row_idx, 3, f"=COUNTIFS({excel_ca_sheet}!R:R,$D$2)")
+                # Skipped: =COUNTIFS('Chat Agent''s Cases'!R:R,$E$2)
+                worksheet.write_formula(row_idx, 4, f"=COUNTIFS({excel_ca_sheet}!R:R,$E$2)")
+                # Requires a Call: =COUNTIFS('Chat Agent''s Cases'!P:P,"Sent Email",'Chat Agent''s Cases'!R:R,"in_progress")
+                worksheet.write_formula(row_idx, 5, f'=COUNTIFS({excel_ca_sheet}!P:P,"Sent Email",{excel_ca_sheet}!R:R,"in_progress")')
+                # Total: =SUM(B:G for this row)
+                worksheet.write_formula(row_idx, 6, f"=SUM(B{row_idx+1}:G{row_idx+1})")
+                
+                self.logger.info("Chat Agent row added to Progress Counter (counts all statuses in Chat Agent's Cases sheet)")
 
             # Write totals row
             worksheet.write(row_idx+1, 0, 'Total')
