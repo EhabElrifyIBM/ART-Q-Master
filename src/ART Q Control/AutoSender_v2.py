@@ -573,6 +573,7 @@ def check_existing_cache_and_ask_enhanced(cache_path, mode_name="Auto Sender"):
                 f"QPushButton:hover {{ background-color: {_c['interactive_hover']}; }}"
                 f"QPushButton:pressed {{ background-color: {_c['interactive_active']}; }}"
             )
+            resume_btn.setFocusPolicy(Qt.ClickFocus)
             resume_btn.clicked.connect(self.on_resume)
             btn_layout.addWidget(resume_btn)
 
@@ -585,11 +586,25 @@ def check_existing_cache_and_ask_enhanced(cache_path, mode_name="Auto Sender"):
                 f" font-family: 'IBM Plex Sans','Segoe UI',Arial; font-size: {_fs}pt; min-height: 44px; }}"
                 f"QPushButton:hover {{ background-color: {_c['layer_02']}; }}"
             )
+            new_btn.setFocusPolicy(Qt.ClickFocus)
             new_btn.clicked.connect(self.on_new)
             btn_layout.addWidget(new_btn)
 
             layout.addLayout(btn_layout)
             self.setLayout(layout)
+            
+            # Install event filter to block keyboard entries
+            self.installEventFilter(self)
+
+        def eventFilter(self, obj, event):
+            """Block keyboard entries at dialog level"""
+            from PyQt5.QtCore import Qt, QEvent
+            if event.type() == QEvent.KeyPress:
+                key = event.key()
+                if key in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space, Qt.Key_Tab, Qt.Key_Backtab):
+                    print("[EVENT FILTER] Blocked key in AutoSenderResumeDialog: {}".format(key))
+                    return True
+            return super().eventFilter(obj, event)
 
         def on_resume(self):
             self.result = "RESUME"
@@ -598,6 +613,27 @@ def check_existing_cache_and_ask_enhanced(cache_path, mode_name="Auto Sender"):
         def on_new(self):
             self.result = "NEW"
             self.accept()
+        
+        def keyPressEvent(self, event):
+            """
+            Override keyPressEvent to prevent accidental button activation.
+            Blocks: Enter, Space, Tab, Shift+Tab, Arrow keys
+            Allows: Mouse clicks only
+            """
+            from PyQt5.QtCore import Qt
+            key = event.key()
+            print("[AutoSenderResumeDialog] keyPressEvent called with key: {}".format(key))
+            
+            # Block keyboard-based selections that might trigger buttons
+            if key in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space, 
+                      Qt.Key_Tab, Qt.Key_Backtab,
+                      Qt.Key_Up, Qt.Key_Down, Qt.Key_Left, Qt.Key_Right):
+                print("[KEYBOARD BLOCKED] Blocked key in AutoSenderResumeDialog: {}".format(key))
+                event.ignore()
+                return
+            
+            # Allow other keys (unlikely but be safe)
+            super().keyPressEvent(event)
     
     app = QApplication.instance()
     if app is None:

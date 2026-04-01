@@ -211,6 +211,7 @@ def check_existing_cache_and_ask_enhanced(cache_path, mode_name="Case Reviewer")
                 f" font-size: {_fs}pt; min-height: 44px; }}"
                 f"QPushButton:hover {{ background-color: {_c['interactive_hover']}; }}"
             )
+            resume_btn.setFocusPolicy(Qt.ClickFocus)
             resume_btn.clicked.connect(self.on_resume)
             btn_layout.addWidget(resume_btn)
 
@@ -223,11 +224,25 @@ def check_existing_cache_and_ask_enhanced(cache_path, mode_name="Case Reviewer")
                 f" font-size: {_fs}pt; min-height: 44px; }}"
                 f"QPushButton:hover {{ background-color: {_c['layer_02']}; }}"
             )
+            new_btn.setFocusPolicy(Qt.ClickFocus)
             new_btn.clicked.connect(self.on_new)
             btn_layout.addWidget(new_btn)
 
             layout.addLayout(btn_layout)
             self.setLayout(layout)
+            
+            # Install event filter to block keyboard entries
+            self.installEventFilter(self)
+        
+        def eventFilter(self, obj, event):
+            """Block keyboard entries at dialog level"""
+            from PyQt5.QtCore import Qt, QEvent
+            if event.type() == QEvent.KeyPress:
+                key = event.key()
+                if key in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space, Qt.Key_Tab, Qt.Key_Backtab):
+                    print("[EVENT FILTER] Blocked key in EnhancedResumeDialog: {}".format(key))
+                    return True
+            return super().eventFilter(obj, event)
         
         def on_resume(self):
             self.result = "RESUME"
@@ -236,6 +251,27 @@ def check_existing_cache_and_ask_enhanced(cache_path, mode_name="Case Reviewer")
         def on_new(self):
             self.result = "NEW"
             self.accept()
+        
+        def keyPressEvent(self, event):
+            """
+            Override keyPressEvent to prevent accidental button activation.
+            Blocks: Enter, Space, Tab, Shift+Tab, Arrow keys
+            Allows: Mouse clicks only
+            """
+            from PyQt5.QtCore import Qt
+            key = event.key()
+            print("[EnhancedResumeDialog] keyPressEvent called with key: {}".format(key))
+            
+            # Block keyboard-based selections that might trigger buttons
+            if key in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space, 
+                      Qt.Key_Tab, Qt.Key_Backtab,
+                      Qt.Key_Up, Qt.Key_Down, Qt.Key_Left, Qt.Key_Right):
+                print("[KEYBOARD BLOCKED] Blocked key in EnhancedResumeDialog: {}".format(key))
+                event.ignore()
+                return
+            
+            # Allow other keys (unlikely but be safe)
+            super().keyPressEvent(event)
     
     app = QApplication.instance()
     if app is None:
@@ -296,12 +332,36 @@ def get_case_closing_code(case_number, cases_completed_count, total_in_progress_
             info_layout = QVBoxLayout()
             info_layout.setSpacing(5)
             
+            # Case info with copy button
+            case_info_h_layout = QHBoxLayout()
+            case_info_h_layout.setSpacing(8)
+            case_info_h_layout.setContentsMargins(0, 0, 0, 0)
+            
             self.case_info_label = QLabel()
             self.case_info_label.setFont(QFont('IBM Plex Sans', _fs2, QFont.Bold))
             self.case_info_label.setStyleSheet(
                 f"font-weight: 700; color: {_c2['interactive']}; background: transparent; border: none;"
             )
-            info_layout.addWidget(self.case_info_label)
+            case_info_h_layout.addWidget(self.case_info_label)
+            
+            # Copy button
+            from PyQt5.QtWidgets import QPushButton
+            copy_btn = QPushButton("📋")
+            copy_btn.setMaximumWidth(40)
+            copy_btn.setMaximumHeight(32)
+            copy_btn.setToolTip("Copy case number to clipboard")
+            copy_btn.setStyleSheet(
+                f"QPushButton {{ background-color: transparent; border: 1px solid {_c2['border_subtle']};"
+                f" border-radius: 4px; padding: 4px; font-size: 16pt; }}"
+                f"QPushButton:hover {{ background-color: {_c2['layer_02']}; border: 1px solid {_c2['interactive']}; }}"
+                f"QPushButton:pressed {{ background-color: {_c2['interactive']}; color: #ffffff; }}"
+            )
+            copy_btn.setFocusPolicy(Qt.ClickFocus)
+            copy_btn.clicked.connect(self.copy_case_number)
+            case_info_h_layout.addWidget(copy_btn)
+            case_info_h_layout.addStretch()
+            
+            info_layout.addLayout(case_info_h_layout)
 
             self.progress_bar = QProgressBar()
             self.progress_bar.setMinimum(0)
@@ -425,6 +485,7 @@ def get_case_closing_code(case_number, cases_completed_count, total_in_progress_
                 f" padding: 10px; min-height: 44px; }}"
                 f"QPushButton:hover {{ background-color: {_c2['danger_hover']}; }}"
             )
+            close_btn.setFocusPolicy(Qt.ClickFocus)
             close_btn.clicked.connect(lambda: self.on_button_clicked("CLOSE_APPLICATION"))
             bottom_layout.addWidget(close_btn)
 
@@ -433,6 +494,10 @@ def get_case_closing_code(case_number, cases_completed_count, total_in_progress_
 
             self.setLayout(main_layout)
             self.update_case_info(self.case_num, self.cases_completed, self.total_count, self.current_position)
+            
+            # Install event filter to block keyboard entries at the dialog level
+            self.installEventFilter(self)
+            self._blocked_keys_count = 0
 
         def close_with_nav(self, nav_code):
             self.selected_code = nav_code
@@ -490,6 +555,7 @@ def get_case_closing_code(case_number, cases_completed_count, total_in_progress_
         def _create_button(self, label_text, code, bg_color):
             """IBM Carbon action button — solid accent color, centered text, easy to click"""
             from PyQt5.QtGui import QFont
+            from PyQt5.QtCore import Qt
             btn = QPushButton(label_text)
             btn.setFont(QFont('IBM Plex Sans', _fs2, QFont.Bold))
             btn.setMinimumHeight(45)
@@ -503,6 +569,7 @@ def get_case_closing_code(case_number, cases_completed_count, total_in_progress_
                 f"QPushButton:pressed {{ background-color: {_c2['interactive_hover']};"
                 f" color: #ffffff; }}"
             )
+            btn.setFocusPolicy(Qt.ClickFocus)  # Only focus on mouse click, not Tab
             btn.clicked.connect(lambda: self.on_button_clicked(code))
             return btn
         
@@ -521,6 +588,52 @@ def get_case_closing_code(case_number, cases_completed_count, total_in_progress_
                     self.case_position_label.setText("")
             except Exception as e:
                 print(f"[WARN] Error updating case info: {e}")
+        
+        def copy_case_number(self):
+            """Copy case number to clipboard"""
+            try:
+                from PyQt5.QtWidgets import QApplication
+                from PyQt5.QtGui import QClipboard
+                
+                # Extract case number from label text (format: "Case XXXXX — Status")
+                label_text = self.case_info_label.text()
+                if label_text and "Case" in label_text:
+                    case_num = label_text.split("Case ")[1].split("  —")[0].strip()
+                    
+                    # Copy to clipboard
+                    clipboard = QApplication.clipboard()
+                    clipboard.setText(case_num, QClipboard.Clipboard)
+                    print(f"[INFO] Case number copied to clipboard: {case_num}")
+            except Exception as e:
+                print(f"[WARN] Failed to copy case number: {e}")
+        
+        def eventFilter(self, obj, event):
+            """
+            Event filter to intercept all keyboard events at the dialog level.
+            This prevents buttons from receiving keyboard events (Enter, Space, etc.)
+            """
+            from PyQt5.QtCore import Qt, QEvent
+            
+            # Only filter keyboard events
+            if event.type() == QEvent.KeyPress:
+                key = event.key()
+                
+                # Block these keys that might activate buttons or navigate
+                if key in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space, 
+                          Qt.Key_Tab, Qt.Key_Backtab,
+                          Qt.Key_Up, Qt.Key_Down, Qt.Key_Left, Qt.Key_Right):
+                    print("[EVENT FILTER] Blocked keyboard key in CaseReviewerDialog: key={}".format(key))
+                    self._blocked_keys_count += 1
+                    return True  # Consume the event, don't pass it along
+                
+                # Allow text input in focused text fields
+                focused_widget = self.focusWidget()
+                if focused_widget and hasattr(focused_widget, 'setText') and hasattr(focused_widget, 'text'):
+                    print("[EVENT FILTER] Text input widget has focus, allowing key: {}".format(key))
+                    return False  # Let the text widget handle it
+            
+            # Pass other events to parent class
+            return super().eventFilter(obj, event)
         
         def on_button_clicked(self, code):
             """Handle button click - close dialog with result"""
@@ -624,6 +737,36 @@ def get_case_closing_code(case_number, cases_completed_count, total_in_progress_
                     # No custom text, just use the selected final action
                     result_code = f"CUSTOM||{final_action}|{status}"
                     self.on_button_clicked(result_code)
+        
+        def keyPressEvent(self, event):
+            """
+            Override keyPressEvent to prevent accidental button activation.
+            Blocks: Enter, Space, Tab, Shift+Tab, Arrow keys
+            Allows: Mouse clicks only and text input in focused fields
+            """
+            from PyQt5.QtCore import Qt
+            key = event.key()
+            print("[CaseReviewerDialog] keyPressEvent called with key: {}".format(key))
+            
+            # Block keyboard-based selections that might trigger buttons
+            if key in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space, 
+                      Qt.Key_Tab, Qt.Key_Backtab,
+                      Qt.Key_Up, Qt.Key_Down, Qt.Key_Left, Qt.Key_Right):
+                print("[KEYBOARD BLOCKED] Blocked key in CaseReviewerDialog: {}".format(key))
+                event.ignore()
+                return
+            
+            # Allow text input in focused text fields
+            focused_widget = self.focusWidget()
+            if focused_widget and hasattr(focused_widget, 'setText'):
+                # This is a text input widget, allow the key
+                print("[KEYBOARD ALLOWED] Text input widget has focus")
+                super().keyPressEvent(event)
+                return
+            
+            # For other widgets, ignore the key
+            print("[KEYBOARD BLOCKED] Key blocked, no text input widget focused")
+            event.ignore()
     
     # Get or create QApplication (should already exist from run_case_reviewer)
     app = QApplication.instance()
@@ -663,6 +806,7 @@ def get_call_closing_code():
     Opens a call outcome dialog for the current call.
     Returns the selected closing code and whether to add a note.
     """
+    from PyQt5.QtCore import Qt
     closing_code = {"value": None, "add_note": False}
 
     from ibm_theme import get_qss, IBM, _read_font_size as _rfs_cc
@@ -750,6 +894,7 @@ def get_call_closing_code():
                     f"QPushButton:hover {{ background-color: {hover}; }}"
                     f"QPushButton:pressed {{ border: 2px inset rgba(0,0,0,0.2); }}"
                 )
+                btn.setFocusPolicy(Qt.ClickFocus)
                 btn.clicked.connect(lambda checked=False, c=code: set_code_and_close(c))
                 grid.addWidget(btn, r, c)
 
@@ -765,6 +910,7 @@ def get_call_closing_code():
                 f" font-size: {_cc_fs}pt; }}"
                 f"QPushButton:hover {{ background-color: {_c_cc['layer_02']}; color: {_c_cc['text_primary']}; }}"
             )
+            other_btn.setFocusPolicy(Qt.ClickFocus)
             other_btn.clicked.connect(ask_other_code)
             main_layout.addWidget(other_btn)
 
@@ -774,6 +920,40 @@ def get_call_closing_code():
             main_layout.addWidget(self.add_note_checkbox)
 
             self.setLayout(main_layout)
+            
+            # Install event filter to block keyboard entries
+            self.installEventFilter(self)
+        
+        def eventFilter(self, obj, event):
+            """Block keyboard entries at dialog level"""
+            from PyQt5.QtCore import Qt, QEvent
+            if event.type() == QEvent.KeyPress:
+                key = event.key()
+                if key in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space, Qt.Key_Tab, Qt.Key_Backtab):
+                    print("[EVENT FILTER] Blocked key in CallOutcomeDialog: {}".format(key))
+                    return True
+            return super().eventFilter(obj, event)
+        
+        def keyPressEvent(self, event):
+            """
+            Override keyPressEvent to prevent accidental button activation.
+            Blocks: Enter, Space, Tab, Shift+Tab, Arrow keys
+            Allows: Mouse clicks only
+            """
+            from PyQt5.QtCore import Qt
+            key = event.key()
+            print("[CallOutcomeDialog] keyPressEvent called with key: {}".format(key))
+            
+            # Block keyboard-based selections that might trigger buttons
+            if key in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space, 
+                      Qt.Key_Tab, Qt.Key_Backtab,
+                      Qt.Key_Up, Qt.Key_Down, Qt.Key_Left, Qt.Key_Right):
+                print("[KEYBOARD BLOCKED] Blocked key in CallOutcomeDialog: {}".format(key))
+                event.ignore()
+                return
+            
+            # Allow other keys (unlikely but be safe)
+            super().keyPressEvent(event)
     
     app = QApplication.instance()
     if app is None:

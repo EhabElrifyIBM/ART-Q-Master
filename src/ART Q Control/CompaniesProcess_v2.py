@@ -205,6 +205,7 @@ def check_companies_cache_and_ask(cache_path):
                 f"QPushButton:hover {{ background-color: {_c['interactive_hover']}; }}"
                 f"QPushButton:pressed {{ background-color: {_c.get('interactive_active', '#002d9c')}; }}"
             )
+            resume_btn.setFocusPolicy(Qt.ClickFocus)
             resume_btn.clicked.connect(self.on_resume)
             btn_layout.addWidget(resume_btn)
 
@@ -217,11 +218,25 @@ def check_companies_cache_and_ask(cache_path):
                 f" font-family: 'IBM Plex Sans','Segoe UI',Arial; font-size: {_fs}pt; min-height: 44px; }}"
                 f"QPushButton:hover {{ background-color: {_c.get('layer_02', '#f4f4f4')}; }}"
             )
+            new_btn.setFocusPolicy(Qt.ClickFocus)
             new_btn.clicked.connect(self.on_new)
             btn_layout.addWidget(new_btn)
 
             layout.addLayout(btn_layout)
             self.setLayout(layout)
+            
+            # Install event filter to block keyboard entries
+            self.installEventFilter(self)
+
+        def eventFilter(self, obj, event):
+            """Block keyboard entries at dialog level"""
+            from PyQt5.QtCore import Qt, QEvent
+            if event.type() == QEvent.KeyPress:
+                key = event.key()
+                if key in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space, Qt.Key_Tab, Qt.Key_Backtab):
+                    print("[EVENT FILTER] Blocked key in CompaniesResumeDialog: {}".format(key))
+                    return True
+            return super().eventFilter(obj, event)
 
         def on_resume(self):
             self.result = "RESUME"
@@ -230,6 +245,27 @@ def check_companies_cache_and_ask(cache_path):
         def on_new(self):
             self.result = "NEW"
             self.accept()
+        
+        def keyPressEvent(self, event):
+            """
+            Override keyPressEvent to prevent accidental button activation.
+            Blocks: Enter, Space, Tab, Shift+Tab, Arrow keys
+            Allows: Mouse clicks only
+            """
+            from PyQt5.QtCore import Qt
+            key = event.key()
+            print("[CompaniesResumeDialog] keyPressEvent called with key: {}".format(key))
+            
+            # Block keyboard-based selections that might trigger buttons
+            if key in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space, 
+                      Qt.Key_Tab, Qt.Key_Backtab,
+                      Qt.Key_Up, Qt.Key_Down, Qt.Key_Left, Qt.Key_Right):
+                print("[KEYBOARD BLOCKED] Blocked key in CompaniesResumeDialog: {}".format(key))
+                event.ignore()
+                return
+            
+            # Allow other keys (unlikely but be safe)
+            super().keyPressEvent(event)
 
     app = QApplication.instance()
     if app is None:
@@ -366,6 +402,7 @@ def show_per_case_outcomes_dialog(email, cases, batch_index=1, total_batches=1):
             quick_layout.setSpacing(10)
 
             def _pill(label, color, hover, text_color="#ffffff"):
+                from PyQt5.QtCore import Qt
                 btn = QPushButton(label)
                 btn.setFont(QFont('IBM Plex Sans', _fs3 - 1, QFont.Bold))
                 btn.setStyleSheet(
@@ -376,6 +413,7 @@ def show_per_case_outcomes_dialog(email, cases, batch_index=1, total_batches=1):
                     f"QPushButton:hover {{ background-color: {hover}; }}"
                     f"QPushButton:pressed {{ opacity: 0.85; }}"
                 )
+                btn.setFocusPolicy(Qt.ClickFocus)
                 return btn
 
             set_all_resolved = _pill(
@@ -417,6 +455,7 @@ def show_per_case_outcomes_dialog(email, cases, batch_index=1, total_batches=1):
                 f" font-size: {_fs3}pt; min-height: 44px; }}"
                 f"QPushButton:hover {{ background-color: {_c3['layer_02']}; }}"
             )
+            cancel_btn.setFocusPolicy(Qt.ClickFocus)
             cancel_btn.clicked.connect(self.reject)
             btn_layout.addWidget(cancel_btn)
 
@@ -431,11 +470,25 @@ def show_per_case_outcomes_dialog(email, cases, batch_index=1, total_batches=1):
                 f" font-size: {_fs3}pt; min-height: 44px; }}"
                 f"QPushButton:hover {{ background-color: {_c3['teal_hover']}; }}"
             )
+            apply_btn.setFocusPolicy(Qt.ClickFocus)
             apply_btn.clicked.connect(self.accept)
             btn_layout.addWidget(apply_btn)
 
             main_layout.addLayout(btn_layout)
             self.setLayout(main_layout)
+            
+            # Install event filter to block keyboard entries
+            self.installEventFilter(self)
+        
+        def eventFilter(self, obj, event):
+            """Block keyboard entries at dialog level"""
+            from PyQt5.QtCore import Qt, QEvent
+            if event.type() == QEvent.KeyPress:
+                key = event.key()
+                if key in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space, Qt.Key_Tab, Qt.Key_Backtab):
+                    print("[EVENT FILTER] Blocked key in PerCaseOutcomesDialog: {}".format(key))
+                    return True
+            return super().eventFilter(obj, event)
         
         def set_all(self, outcome):
             """Set all dropdowns to the same outcome"""
@@ -484,32 +537,30 @@ def show_per_case_outcomes_dialog(email, cases, batch_index=1, total_batches=1):
         
         def keyPressEvent(self, event):
             """
-            Phase 3.4: Lock keyboard input to prevent accidental key presses.
-            Allow only Tab, Enter, Escape and arrow keys for navigation.
+            Override keyPressEvent to prevent accidental button/dropdown activation.
+            Blocks: Enter, Space, Tab, Shift+Tab, Arrow keys
+            Allows: Mouse clicks and dropdown interactions only
             """
+            from PyQt5.QtCore import Qt
             key = event.key()
+            print("[PerCaseOutcomesDialog] keyPressEvent called with key: {}".format(key))
             
-            # Allow Tab/Shift+Tab for navigation
-            if key in (Qt.Key_Tab, Qt.Key_Backtab):
-                super().keyPressEvent(event)
+            # Block keyboard-based selections that might trigger buttons or accidentally change combos
+            if key in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space, 
+                      Qt.Key_Tab, Qt.Key_Backtab,
+                      Qt.Key_Up, Qt.Key_Down, Qt.Key_Left, Qt.Key_Right):
+                print("[KEYBOARD BLOCKED] Blocked key in PerCaseOutcomesDialog: {}".format(key))
+                event.ignore()
                 return
             
-            # Allow Enter/Return for button activation
-            if key in (Qt.Key_Return, Qt.Key_Enter):
-                super().keyPressEvent(event)
-                return
-            
-            # Allow arrow keys for dropdown navigation
-            if key in (Qt.Key_Up, Qt.Key_Down):
-                super().keyPressEvent(event)
-                return
-            
-            # Allow Escape to close
+            # Allow Escape to close dialog
             if key == Qt.Key_Escape:
+                print("[KEYBOARD ALLOWED] Escape key allowed in PerCaseOutcomesDialog")
                 super().keyPressEvent(event)
                 return
             
             # Block everything else (Ctrl+C, Alt+Tab, etc)
+            print("[KEYBOARD BLOCKED] Other key blocked in PerCaseOutcomesDialog: {}".format(key))
             event.ignore()
     
     # Show dialog
