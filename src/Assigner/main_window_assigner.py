@@ -1320,7 +1320,7 @@ class MainWindow(QMainWindow):
     def open_main_menu(self):
         """Open the main menu window. Uses a local import to avoid circular imports."""
         try:
-            from .main_menu import MainMenu
+            from ui.main_menu import MainMenu
             self.menu_window = MainMenu()
             self.menu_window.show()
             # Close this window to mimic the menu->assigner flow

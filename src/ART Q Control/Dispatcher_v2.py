@@ -237,7 +237,10 @@ def show_mode_selector():
             f"QPushButton:hover {{"
             f"  background-color: {hover_bg};"
             f"}}"
-            f"QPushButton:pressed {{ filter: brightness(0.9); }}"
+            f"QPushButton:pressed {{"
+            f"  background-color: {hover_bg};"
+            f"  opacity: 0.9;"
+            f"}}"
         )
         return btn
 
