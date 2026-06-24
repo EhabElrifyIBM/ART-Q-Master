@@ -18,9 +18,11 @@ __pycache__/
 # Log files
 *.log
 src/logs/
+logs/
 
 # Cache and handler files
 handlers_cache.json
+*_cache.json
 
 # Errors and screenshots
 errors/
@@ -36,6 +38,8 @@ Thumbs.db
 *.zip
 *.html
 *.txt
+*.backup
+*.phase*.backup
 
 # Ignore assets if not needed
 assets/

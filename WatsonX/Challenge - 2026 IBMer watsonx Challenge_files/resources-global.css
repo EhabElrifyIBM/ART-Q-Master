@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+
+    <!-- Disable cache -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <meta name="source" content="1.0.0" />
+
+    <!-- dynamic site metatags (set in src/components/Site/Site.ts) -->
+    <meta name="date" content="" />
+    <meta name="description" content="" />
+    <meta name="dc.date" content="" />
+    <meta name="dc.rights" content="" />
+    <meta name="IBM.Effective" content="" />
+    <meta name="keywords" content="" />
+    <meta name="owner" content="" />
+    <!-- end dynamic site metatags -->
+
+    <!-- dynamic page metatags (set in src/components/Site/Page/Page.ts) -->
+    <title></title>
+    <meta name="dc.language" content="" />
+    <meta name="ibm.country" content="" />
+    <!-- end dynamic page meta tags -->
+
+    <script>
+      var pathname = window.location.pathname;
+
+      if (pathname.indexOf('/w3publisher/editor/') === 0) {
+        document.write('<base href="/w3publisher/editor/">');
+      } else if (pathname.indexOf('/w3publisher') === 0) {
+        document.write('<base href="/w3publisher/">');
+      } else if (pathname.indexOf('/careers') === 0) {
+        document.write('<base href="/careers/">');
+      } else if (pathname.indexOf('/cdo') === 0) {
+        document.write('<base href="/cdo/">');
+      } else if (pathname.indexOf('/cio') === 0) {
+        document.write('<base href="/cio/">');
+      } else if (pathname.indexOf('/developer/appservices') === 0) {
+        document.write('<base href="/developer/appservices/">');
+      } else if (pathname.indexOf('/enterprise-data') === 0) {
+        document.write('<base href="/enterprise-data/">');
+      } else if (pathname.indexOf('/epm') === 0) {
+        document.write('<base href="/epm/">');
+      } else if (pathname.indexOf('/microsoft365') === 0) {
+        document.write('<base href="/microsoft365/">');
+      } else if (pathname.indexOf('/mac') === 0) {
+        document.write('<base href="/mac/">');
+      } else if (pathname.indexOf('/mail') === 0) {
+        document.write('<base href="/mail/">');
+      } else if (pathname.indexOf('/mobile') === 0) {
+        document.write('<base href="/mobile/">');
+      } else if (pathname.indexOf('/ibm/corporate-documents') === 0) {
+        document.write('<base href="/ibm/corporate-documents/">');
+      } else if (pathname.indexOf('/ibm/privacy') === 0) {
+        document.write('<base href="/ibm/privacy/">');
+      } else if (pathname.indexOf('/ibm/strategy') === 0) {
+        document.write('<base href="/ibm/strategy/">');
+      } else if (pathname.indexOf('/innersource') === 0) {
+        document.write('<base href="/innersource/">');
+      } else if (pathname.indexOf('/linux') === 0) {
+        document.write('<base href="/linux/">');
+      } else if (pathname.indexOf('/pc-ibm') === 0) {
+        document.write('<base href="/pc-ibm/">');
+      } else if (pathname.indexOf('/youandibm') === 0) {
+        document.write('<base href="/youandibm/">');
+      } else if (pathname.indexOf('/hr/policy') === 0) {
+        document.write('<base href="/hr/policy/">');
+      } else if (pathname.indexOf('/project-services') === 0) {
+        document.write('<base href="/project-services/">');
+      } else {
+        document.write('<base href="/">');
+      }
+
+      // Load dependency after setting base tag
+      document.write('<link rel="stylesheet" type="text/css" href="resources-global.css" />');
+    </script>
+    <link rel="icon" href="https://w3.s81c.com/w3publisher/static-asset-cache/images/favicon.png" type="image/png" />
+    <link rel="stylesheet" type="text/css" href="https://w3.s81c.com/w3publisher/static-asset-cache/css/w3ds.css" />
+    <link rel="stylesheet" type="text/css" href="https://w3.s81c.com/w3publisher/static-asset-cache/css/w3ds-border-sides.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdn01.boxcdn.net/platform/preview/2.106.0/en-US/preview.css"
+      integrity="sha384-d7dKty/tc+zcZmQXi6HGVMfUH46h0yCYJKko1LHVRnTcTuJbzyo0AJO2Qxk3nYgl"
+      crossorigin="anonymous" />
+    <link rel="stylesheet" href="https://1.www.s81c.com/common/carbon/plex/plex-full.css" />
+    <link rel="stylesheet" href="https://1.www.s81c.com/common/carbon/plex/sans-jp.css" />
+    <link rel="stylesheet" href="https://1.www.s81c.com/common/carbon/plex/sans-kr.css" />
+    <script
+      src="https://cdn01.boxcdn.net/platform/preview/2.106.0/en-US/preview.js"
+      integrity="sha384-2/n5s1LTIqbxSYzzElW2uAYzmVCiDvOZzqg5syD8TwELUk2Q4O5N0p5DPRlHyaB4"
+      crossorigin="anonymous"></script>
+    <script type="module" crossorigin src="./assets/index-CGMzNLRp.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/rolldown-runtime-BM3Ffeng.js">
+    <link rel="modulepreload" crossorigin href="./assets/site-viewer-vendor-Dg87BFDQ.js">
+    <link rel="stylesheet" crossorigin href="./assets/index-BQKU1E75.css">
+  </head>
+  <body>
+    <div id="app" class="main" role="main"></div>
+    <script type="text/javascript" src="https://w3.s81c.com/w3publisher/static-asset-cache/scripts/w3ds.js"></script>
+    <script>
+      var isProduction = window.location.href.startsWith('https://w3.ibm.com/');
+      var clickstreamHost = isProduction
+        ? 'https://w3.s81c.com/w3publisher/clickstream'
+        : 'https://w3-pre.s81c.com/w3publisher/clickstream';
+
+      var script = document.createElement('script');
+      script.src = clickstreamHost + '/ibm.js';
+      document.head.appendChild(script);
+    </script>
+    <!-- begin BeeHeard live embed code -->
+    <script async src="https://beeheard.beeheard.dal.app.cirrus.ibm.com/survey/preconfig/eoWbA95k.js"></script>
+    <!-- end BeeHeard live embed code -->
+
+    <!-- Vite entry point -->
+  </body>
+</html>
