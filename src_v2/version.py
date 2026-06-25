@@ -10,7 +10,7 @@ Single source of truth.  Import this wherever you need the version string:
 # ── Semantic version ──────────────────────────────────────────────────────────
 VERSION_MAJOR: int = 2
 VERSION_MINOR: int = 0
-VERSION_PATCH: int = 0
+VERSION_PATCH: int = 1
 
 __version__: str = f"{VERSION_MAJOR}.{VERSION_MINOR}.{VERSION_PATCH}"
 
