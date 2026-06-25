@@ -1,55 +1,98 @@
+# =============================================================================
+# ART Q Master — .gitignore
+# =============================================================================
+
+# -----------------------------------------------------------------------------
 # Python virtual environments
+# -----------------------------------------------------------------------------
 .venv/
 __.venv/
+venv/
+env/
 
-# VS Code settings
+# -----------------------------------------------------------------------------
+# Python bytecode
+# -----------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.pyd
+*.pyo
+
+# -----------------------------------------------------------------------------
+# VS Code workspace
+# -----------------------------------------------------------------------------
 .vscode/
 
-# Build and distribution outputs
+# -----------------------------------------------------------------------------
+# PyInstaller build outputs
+# -----------------------------------------------------------------------------
 build/
 dist/
+*.toc
+*.pkg
 
-# Python bytecode
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-
-# Log files
+# -----------------------------------------------------------------------------
+# Runtime-generated logs (keep directory structure via .gitkeep)
+# -----------------------------------------------------------------------------
 *.log
-src/logs/
 logs/
+src/logs/
 
-# Cache and handler files
+# Runtime error snapshots
+errors/
+src_v2/errors/
+src_v2/ART Q Control/errors/
+
+# Temp image pipeline
+temp_pdf_images/
+
+# -----------------------------------------------------------------------------
+# Runtime-generated data / cache
+# -----------------------------------------------------------------------------
 handlers_cache.json
 *_cache.json
+dropped_cases.log
+file_processing.log
 
-# Errors and screenshots
-errors/
-
-# System files
+# -----------------------------------------------------------------------------
+# OS artefacts
+# -----------------------------------------------------------------------------
 .DS_Store
 Thumbs.db
+desktop.ini
 
-# Ignore generated executables and packages
-*.exe
-*.pkg
-*.toc
-*.zip
-*.html
-*.txt
+# -----------------------------------------------------------------------------
+# Backup files
+# -----------------------------------------------------------------------------
 *.backup
 *.phase*.backup
 
-# Ignore assets if not needed
-assets/
+# -----------------------------------------------------------------------------
+# WatsonX challenge assets (HTML/browser download artefacts only)
+# Note: keep .md files and PDFs; only ignore HTML browser exports
+# -----------------------------------------------------------------------------
+WatsonX/*.html
+WatsonX/*_files/
 
-# Ignore spec files if not needed
-*.spec
-
-# Ignore theme and config files if not needed
-# theme_config.json
-# config.json
-
-# Ignore documentation if not needed
-# docs/
+# -----------------------------------------------------------------------------
+# Explicitly TRACKED (override broad patterns above)
+# assets/ — icons and images needed for the build
+# *.spec  — PyInstaller spec files are source-controlled
+# config.json / theme_config.json — user configuration
+# docs/   — project documentation
+# README.md, REFACTORING_PLAN.md
+# .gitkeep — empty-directory placeholders
+# -----------------------------------------------------------------------------
+!assets/
+!assets/**
+!*.spec
+!config.json
+!theme_config.json
+!docs/
+!docs/**
+!README.md
+!REFACTORING_PLAN.md
+!errors/.gitkeep
+!logs/.gitkeep
+!src_v2/errors/.gitkeep
+!src_v2/ART Q Control/errors/.gitkeep
