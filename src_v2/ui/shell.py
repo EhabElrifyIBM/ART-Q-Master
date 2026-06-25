@@ -8,6 +8,7 @@ production implementation remains untouched in `src/`.
 
 from typing import Iterable, List, Optional, Tuple
 
+from version import version_label, footer_label, version_tag, __version__
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QResizeEvent, QFont
 from PyQt5.QtWidgets import (
@@ -79,7 +80,7 @@ class ToolPlaceholderDialog(QDialog):
 
     def _build_ui(self) -> None:
         definition = get_tool_definition(self._tool_id)
-        self.setWindowTitle(f"{definition.display_name} - ART Q Master V2")
+        self.setWindowTitle(f"{definition.display_name} — {version_label}")
         self.resize(920, 620)
 
         root = QVBoxLayout(self)
@@ -281,7 +282,7 @@ class UnifiedToolShell(QMainWindow):
             )
 
     def _build_ui(self) -> None:
-        self.setWindowTitle(self._title_text)
+        self.setWindowTitle(f"{self._title_text}  —  {version_tag}")
         self.resize(1380, 900)
 
         central = QWidget(self)
@@ -568,10 +569,17 @@ class UnifiedToolShell(QMainWindow):
         layout = QHBoxLayout(frame)
         layout.setContentsMargins(18, 14, 18, 14)
 
-        footer_label = QLabel("ART Q Master V2 • Powered by IBM Carbon Design")
-        footer_label.setObjectName("footerLabel")
-        layout.addWidget(footer_label)
+        left_label = QLabel(footer_label)
+        left_label.setObjectName("footerLabel")
+        layout.addWidget(left_label)
+
         layout.addStretch(1)
+
+        version_badge = QLabel(__version__)
+        version_badge.setObjectName("versionBadge")
+        version_badge.setToolTip(f"Application version {__version__}")
+        layout.addWidget(version_badge)
+
         return frame
 
     def set_tools(self, tools: Iterable[ToolCard]) -> None:

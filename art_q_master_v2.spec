@@ -155,9 +155,10 @@ hiddenimports = [
     "matplotlib.backends.backend_qt5agg",
 
     # ------------------------------------------------------------------
-    # Application — entry point
+    # Application — entry point + version
     # ------------------------------------------------------------------
     "main",
+    "version",
 
     # ------------------------------------------------------------------
     # UI modules
@@ -380,7 +381,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    console=False,                    # windowed GUI — no console window
+    console=True,                    # windowed GUI — no console window
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

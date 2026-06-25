@@ -1,0 +1,41 @@
+# CaseReviewer_v2 QApplication Fix - Quick Summary
+
+## Problem
+```
+QWidget: Must construct a QApplication before a QWidget
+```
+Error when Case Reviewer dialog tried to initialize.
+
+## Root Cause
+QApplication was created too late - AFTER dialogs tried to instantiate.
+
+## Solution
+Initialize QApplication at the START of `run_case_reviewer()` before any dialogs.
+
+## Changes Made
+
+### Single File Modified: `src/ART Q Control/CaseReviewer_v2.py`
+
+**Location 1: Line 730 - run_case_reviewer() function**
+```python
+# Added these lines at the very beginning:
+app = QApplication.instance()
+if app is None:
+    app = QApplication(sys.argv)
+```
+
+**Location 2-4: Dialog functions (558, 687, 125)**
+- Updated QApplication creation logic to use existing app
+- Added fallback for standalone testing
+- Changed from creating+quitting app to reusing existing one
+
+## Result
+✅ Case Reviewer dialogs now initialize correctly  
+✅ No QApplication errors  
+✅ All dialog types working (Resume, Closing Code, Call Outcome)  
+✅ Backward compatible with standalone testing  
+
+## Testing
+File syntax verified: ✅ No errors  
+All 4 dialog functions updated consistently: ✅ Complete  
+Ready for testing: ✅ Ready

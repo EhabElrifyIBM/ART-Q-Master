@@ -246,6 +246,16 @@ class V2ThemeService:
             font-size: {footer_size}px;
             font-weight: 500;
         }}
+        QLabel#versionBadge {{
+            color: {colors['badge_text']};
+            background: {colors['badge_bg']};
+            border: 1px solid {colors['badge_border']};
+            border-radius: 999px;
+            padding: 4px 12px;
+            font-size: {badge_size}px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }}
         QLabel#toolBadge {{
             background: {colors['badge_bg']};
             color: {colors['badge_text']};

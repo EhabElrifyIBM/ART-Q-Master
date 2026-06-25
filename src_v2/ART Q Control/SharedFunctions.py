@@ -630,14 +630,29 @@ def case_search_and_open(driver, case_number):
     #Wait timer
     time.sleep(3)
 
-    #Clicking Edit Button before starting
-    click_safe(
+    # Read live CRM status to avoid wasting time on Edit button if case is already closed
+    crm_status = ""
+    status_el = safe_find(
         driver,
         By.XPATH,
-        "//button[contains(@id,'incident|NoRelationship|Form|lvdcg.incident.TimeTrackingCheckOut.Command') and contains(@id,'-button')]",
-        timeout=1,
+        "//div[contains(@id,'headerControlsList')]/div[3]/div/div",
+        timeout=2,
         retries=3,
     )
+    if status_el:
+        crm_status = status_el.text.strip().lower()
+
+    # Click Edit only if case is not already closed/resolved/cancelled
+    if crm_status not in ("closed", "cancelled"):
+        click_safe(
+            driver,
+            By.XPATH,
+            "//button[contains(@id,'incident|NoRelationship|Form|lvdcg.incident.TimeTrackingCheckOut.Command') and contains(@id,'-button')]",
+            timeout=1,
+            retries=3,
+        )
+    else:
+        print(f"[INFO] Case {case_number} is '{crm_status}' in CRM — skipping Edit button")
 
 def solution_provided_check_and_skip(driver, case_number, df, excel_path):
     """Check if case has 'Solution Provided' status - skip if not"""
