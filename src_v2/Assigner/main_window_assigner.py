@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import (
 )
 from datetime import datetime
 from PyQt5.QtCore import (
-    Qt, QThread, pyqtSignal, QSize, QObject, QModelIndex
+    Qt, QThread, pyqtSignal, QSize, QObject, QModelIndex, QTimer
 )
 from PyQt5.QtGui import QFont, QPixmap, QIcon, QResizeEvent
 import sys
@@ -78,7 +78,8 @@ class ScrollAreaWithDelete(QScrollArea):
 
 class FileProcessingWorker(QObject):
     log_signal = pyqtSignal(str)
-    progress_signal = pyqtSignal(int)
+    # progress_signal now carries (percentage: int, step_label: str)
+    progress_signal = pyqtSignal(int, str)
     finished = pyqtSignal(bool, str)
 
     def __init__(self, raw_file, prev_file, sms_file, email_file, output_file, selected_handlers, chat_agent_info=None, protect_companies=False):
@@ -91,35 +92,41 @@ class FileProcessingWorker(QObject):
         self.selected_handlers = selected_handlers
         self.chat_agent_info = chat_agent_info
         self.protect_companies = protect_companies
+        self._processor = None          # kept so reset can cancel it
+        self._cancel_requested = False  # soft-cancel flag
+
+    def request_cancel(self):
+        """Ask the processor to abort at the next checkpoint."""
+        self._cancel_requested = True
+        if self._processor is not None:
+            self._processor._cancelled = True
 
     def run(self):
         try:
             from .assigner_processor import FileProcessor
         except ImportError:
             from assigner_processor import FileProcessor
-        processor = FileProcessor()
-        processor.setup_logging(log_callback=self.emit_log)
+
+        self._processor = FileProcessor()
+        self._processor.setup_logging(
+            log_callback=self.emit_log,
+            progress_callback=self._on_progress
+        )
+
         try:
-            self.emit_log("\n=== Starting File Processing ===")
-            self.emit_log(f"Raw file: {self.raw_file}")
+            self.emit_log("=== Starting File Processing ===")
             if self.prev_file:
                 self.emit_log(f"Previous file: {self.prev_file}")
             if self.sms_file:
                 self.emit_log(f"SMS file: {self.sms_file}")
-            self.emit_log(f"Selected handlers: {', '.join(self.selected_handlers)}")
-            
-            # Log Chat Agent info if enabled
             if self.chat_agent_info:
                 names = self.chat_agent_info.get('supporter_names', [self.chat_agent_info.get('supporter_name', '')])
                 if self.chat_agent_info.get('dev_mode') and len(names) > 1:
-                    self.emit_log(
-                        f"Chat Agent [DEV MODE]: {', '.join(names)} "
-                        f"({len(names)} agents, 15% capacity bonus each)"
-                    )
+                    self.emit_log(f"Chat Agent [DEV MODE]: {', '.join(names)}")
                 else:
-                    self.emit_log(f"Chat Agent: {names[0]} (with 15% capacity bonus)")
+                    self.emit_log(f"Chat Agent: {names[0]} (15% capacity bonus)")
 
-            is_valid, message = processor.validate_files(
+            is_valid, message = self._processor.validate_files(
                 self.raw_file,
                 self.prev_file if self.prev_file else None,
                 self.sms_file if self.sms_file else None
@@ -128,9 +135,11 @@ class FileProcessingWorker(QObject):
                 self.emit_log(f"Validation failed: {message}")
                 self.finished.emit(False, message)
                 return
-            self.emit_log("File validation successful")
-            self.progress_signal.emit(10)
-            success, message = processor.process_files(
+
+            self.emit_log("Validation OK — processing started")
+            self._on_progress(8, "Validation complete…")
+
+            success, message = self._processor.process_files(
                 self.raw_file,
                 self.prev_file if self.prev_file else None,
                 self.sms_file if self.sms_file else None,
@@ -141,17 +150,20 @@ class FileProcessingWorker(QObject):
                 protect_companies=self.protect_companies
             )
             if success:
-                self.progress_signal.emit(100)
-                self.emit_log("\nProcessing completed successfully!")
-                self.emit_log(f"Output saved to: {self.output_file}")
+                self._on_progress(100, "Done ✓")
+                self.emit_log("Processing completed successfully!")
+                self.emit_log(f"Output: {self.output_file}")
                 self.finished.emit(True, message)
             else:
-                self.emit_log("\nProcessing failed")
+                self.emit_log("Processing failed")
                 self.finished.emit(False, message)
         except Exception as e:
             error_msg = str(e)
-            self.emit_log(f"\nError during processing: {error_msg}")
+            self.emit_log(f"Error: {error_msg}")
             self.finished.emit(False, error_msg)
+
+    def _on_progress(self, pct: int, label: str = ""):
+        self.progress_signal.emit(pct, label)
 
     def emit_log(self, message):
         self.log_signal.emit(message)
@@ -195,8 +207,12 @@ class MainWindow(QMainWindow, V2TypographyMixin):
         self.raw_file = None
         self.previous_file = None
         self.sms_file = None
-        self.email_file = None # Added for email replies
+        self.email_file = None
         self.file_labels = {}
+
+        # Worker reference for cancellation
+        self.worker = None
+        self.worker_thread = None
 
         # Create log area first
         self.log_area = QTextEdit()
@@ -565,34 +581,77 @@ class MainWindow(QMainWindow, V2TypographyMixin):
         )
         content_layout.addWidget(self.protect_companies_checkbox)
 
-        # Process section
-        process_layout = QHBoxLayout()
-        process_layout.setContentsMargins(0, 0, 0, 0)
-        
-        # Process button with fixed width
+        # ── Process + status block (centered) ───────────────────────────────────
+        process_block = QWidget()
+        process_block_layout = QVBoxLayout(process_block)
+        process_block_layout.setContentsMargins(0, 4, 0, 4)
+        process_block_layout.setSpacing(4)
+
+        # Row 1: centered Process button
+        btn_row = QHBoxLayout()
+        btn_row.setContentsMargins(0, 0, 0, 0)
         process_button = QPushButton("Process")
         process_button.setObjectName("Process")
-        process_button.setFixedWidth(112)
+        process_button.setFixedWidth(120)
         process_button.clicked.connect(self.process)
         process_button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        
-        # Progress bar with expanding policy and minimum width
+        btn_row.addStretch()
+        btn_row.addWidget(process_button)
+        btn_row.addStretch()
+        process_block_layout.addLayout(btn_row)
+
+        # Row 2: spinner  42%  Step N/10 — description  (centered)
+        self._spinner_chars = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]
+        self._spinner_idx = 0
+        primary_color = self.theme_manager.get_color('primary')
+        text_color = self.theme_manager.get_color('text_primary')
+
+        self.spinner_label = QLabel("")
+        self.spinner_label.setFixedWidth(22)
+        self.spinner_label.setAlignment(Qt.AlignCenter)
+        self.spinner_label.setStyleSheet(
+            f"color: {primary_color}; font-size: 18px; font-weight: bold;"
+        )
+
+        self.pct_label = QLabel("")
+        self.pct_label.setFixedWidth(40)
+        self.pct_label.setAlignment(Qt.AlignCenter)
+        self.pct_label.setStyleSheet(
+            f"color: {primary_color}; font-size: 13px; font-weight: bold;"
+        )
+
+        self.step_label = QLabel("")
+        self.step_label.setAlignment(Qt.AlignCenter)
+        self.step_label.setStyleSheet(f"color: {text_color}; font-size: 12px;")
+
+        status_row = QHBoxLayout()
+        status_row.setContentsMargins(0, 0, 0, 0)
+        status_row.setSpacing(6)
+        status_row.addStretch()
+        status_row.addWidget(self.spinner_label)
+        status_row.addWidget(self.pct_label)
+        status_row.addWidget(self.step_label)
+        status_row.addStretch()
+        process_block_layout.addLayout(status_row)
+
+        # Dummy progress_bar (hidden) — keeps remaining references valid
         self.progress_bar = QProgressBar()
         self.progress_bar.setMaximum(100)
-        self.progress_bar.setMinimumWidth(300)
-        self.progress_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        
-        # Add widgets to layout
-        process_layout.addWidget(process_button)
-        process_layout.addWidget(self.progress_bar)
-        
-        content_layout.addLayout(process_layout)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setVisible(False)
+
+        # Spinner QTimer — only ticks during processing
+        self._spinner_timer = QTimer()
+        self._spinner_timer.setInterval(80)
+        self._spinner_timer.timeout.connect(self._tick_spinner)
+
+        content_layout.addWidget(process_block)
 
         # Log section
-        log_label = QLabel("Log:")
+        log_label = QLabel("Activity Log:")
         self._dynamic_labels.append((log_label, "section_dark"))
         content_layout.addWidget(log_label)
-        
+
         self.log_area = QTextEdit()
         self.log_area.setReadOnly(True)
         self.log_area.setMinimumHeight(110)
@@ -600,7 +659,7 @@ class MainWindow(QMainWindow, V2TypographyMixin):
         self.log_area.setStyleSheet("")
         content_layout.addWidget(self.log_area)
 
-        # Reset button
+        # Reset / Cancel button
         self.reset_btn = QPushButton("Reset")
         self._dynamic_buttons.append((self.reset_btn, "secondary"))
         self.reset_btn.clicked.connect(self.reset_all)
@@ -1305,127 +1364,225 @@ class MainWindow(QMainWindow, V2TypographyMixin):
                 self.email_file = file_name
 
     def reset_all(self):
+        """Cancel any running processing, then clear all UI state."""
+        # ── Cancel the worker if one is running ──────────────────────────────
+        if self.worker is not None:
+            try:
+                self.worker.request_cancel()
+            except Exception:
+                pass
+
+        # Ask the thread to stop — guard against stale C++ objects.
+        # Do NOT null self.worker_thread here; _on_thread_finished will do that
+        # once the OS thread has actually finished, preventing the
+        # "QThread: Destroyed while thread is still running" crash.
+        if self.worker_thread is not None:
+            try:
+                if self.worker_thread.isRunning():
+                    self.worker_thread.quit()
+            except RuntimeError:
+                # C++ object already deleted (thread finished between the check
+                # and the quit call) — safe to null now.
+                self.worker_thread = None
+
+        self.worker = None
+
+        # Stop spinner
+        if hasattr(self, '_spinner_timer'):
+            self._spinner_timer.stop()
+        if hasattr(self, 'spinner_label'):
+            self.spinner_label.setText("")
+        if hasattr(self, 'pct_label'):
+            self.pct_label.setText("")
+        if hasattr(self, 'step_label'):
+            self.step_label.setText("")
+
+        # Re-enable process button
+        btn = self.findChild(QPushButton, "Process")
+        if btn:
+            btn.setEnabled(True)
+
         # Reset file selections
         for label in self.file_labels.values():
             label.setText("No file selected")
-        
+
         self.raw_file = None
         self.previous_file = None
         self.sms_file = None
-        self.email_file = None # Reset email file
-        
+        self.email_file = None
+
         # Reset output path
         self.output_file_edit.clear()
-        
+
         # Reset file paths
         self.raw_file_path.clear()
         self.prev_file_path.clear()
         self.sms_file_path.clear()
-        self.email_file_path.clear() # Clear email path
-        
+        self.email_file_path.clear()
+
         # Reset handlers
         for checkbox in self.handler_vars.values():
             checkbox.setChecked(False)
-        # (Half-day options removed)
-        
+
         # Clear log
         self.log_area.clear()
-        
-        # Reset progress bar to 0% but keep it visible
-        self.progress_bar.setValue(0)
 
+    # ── Spinner helpers ───────────────────────────────────────────────────────
+    def _tick_spinner(self):
+        """Advance one frame of the braille spinner."""
+        if not hasattr(self, '_spinner_chars'):
+            return
+        self._spinner_idx = (self._spinner_idx + 1) % len(self._spinner_chars)
+        try:
+            self.spinner_label.setText(self._spinner_chars[self._spinner_idx])
+        except Exception:
+            pass
+
+    def _on_thread_finished(self):
+        """Called when the QThread's OS thread has fully stopped — safe to null the ref."""
+        self.worker_thread = None
+
+    def _update_progress(self, pct: int, label: str = ""):
+        """Slot connected to worker.progress_signal — updates spinner percentage + step label."""
+        try:
+            self.progress_bar.setValue(pct)  # hidden bar still tracks value
+            if hasattr(self, 'pct_label'):
+                self.pct_label.setText(f"{pct}%")
+            if label and hasattr(self, 'step_label'):
+                self.step_label.setText(label)
+        except Exception:
+            pass
+
+    # ── Activity log ──────────────────────────────────────────────────────────
     def add_log(self, message):
-        """Add a message to the log window with smart filtering - only show important steps and errors"""
+        """Append a message to the activity log — key milestones and steps shown."""
         if hasattr(self, 'log_area') and self.log_area is not None:
-            # Filter messages for the main window - only show important ones
             if self._should_show_in_main_window(message):
                 self.log_area.append(message)
-                # Ensure the new text is visible by scrolling to bottom
                 scroll_bar = self.log_area.verticalScrollBar()
                 if scroll_bar:
                     scroll_bar.setValue(scroll_bar.maximum())
-    
-    def _should_show_in_main_window(self, message):
-        """Determine if a message should be shown in the main window based on importance"""
-        message_lower = message.lower()
-        
-        # Always show these important messages
-        important_keywords = [
-            '=== starting file processing ===',
+
+    def _should_show_in_main_window(self, message: str) -> bool:
+        """Return True for messages worth showing in the activity log."""
+        ml = message.lower()
+
+        # ── Always block pure noise ────────────────────────────────────────
+        noisy_patterns = (
+            'raw column', 'still missing', 'rows missing', 'sample',
+            'non-empty count', 'dnd debug', 'debug ', 'console debug',
+            'available columns', 'column validation', 'found columns',
+            'found: ', 'ensuring output columns', 'found case number',
+            '=== using prev_file', 'prev_file has these sheets',
+            'checking prev_file', 'setting prev_output_file',
+            'issue not fixed sheet found', 'dnd emails sheet found',
+            'will load issue not fixed', 'no previous file with issue',
+            'searching for actual previous', 'previous output file',
+            'could not check prev_file', 'could not search directory',
             '=== starting final processing ===',
+            'processing final output with',
+            '=== step 1: loading', '=== step 2: merging',
+            '=== step 3: applying', '=== step 3.5', '=== step 3.6',
+            '=== step 4:', '=== 4.1', '=== 4.2', '=== 4.3',
+            '=== 4.4', '=== 4.5', '=== 4.6', '=== 4.7',
+            '=== step 5', '=== step 6', '=== step 7',
+            '=== case sorting', 'case sorting summary',
+            'handler-only update', 'added/updated local time',
+            'created new local time', 'local time column already',
+            'added validation dropdown for column',
+            'will add validation to', 'found sheets:',
+            'adding validation dropdown', 'auto_adjust',
+            'column_letter', 'vlookup formula',
+            'validation dropdowns and region',
+        )
+        if any(n in ml for n in noisy_patterns):
+            return False
+
+        # ── Always surface errors / failures ──────────────────────────────
+        if any(k in ml for k in ('error', 'failed', 'exception', 'critical')):
+            return True
+
+        # ── Warnings — show meaningful ones only ──────────────────────────
+        minor_warnings = (
+            'raw column', 'still missing', 'rows missing', 'non-empty count',
+            'dnd debug', 'debug ', 'console debug', 'could not sort by',
+            'could not format', 'could not delete temporary',
+        )
+        if 'warning' in ml and not any(n in ml for n in minor_warnings):
+            return True
+
+        # ── Step N/10 progress lines from the worker ──────────────────────
+        if ml.startswith('step ') and '/' in ml:
+            return True
+
+        # ── File load / filtering milestones ──────────────────────────────
+        if any(m in ml for m in (
+            '=== starting file processing',
+            'validation ok',
+            'loaded raw file:',
+            'previous file:',
+            'filtering done:',
+            'converted ',
+        )):
+            return True
+
+        # ── SMS / Email processing summaries ──────────────────────────────
+        if any(m in ml for m in (
+            'sms replies processed',
+            'email replies processed',
+            'sms processing summary',
+            'email processing completed',
+            'fixed:', 'issue not fixed:', 'refused callback:',
+            'dnd:', 'ambiguous',
+            'skipped:', 'sms updated count',
+        )):
+            return True
+
+        # ── Assignment & handler milestones ───────────────────────────────
+        if any(m in ml for m in (
+            '=== separated approach',
+            'selected handlers for new case',
+            'preserved ', 'new cases to assign:',
+            'total pulled for',
+            'chat agent:',
+            'chat agent final step',
+            'active handlers',
+            'total in_progress cases',
+            'quota:',
+            ' cases assigned',
+            'fair share',
+            'off-queue redistribution',
+            'rebalancing',
+        )):
+            return True
+
+        # ── DND / Companies / Companies sheet ─────────────────────────────
+        if any(m in ml for m in (
+            'dnd emails database',
+            'new dnd emails to database',
+            'pa cases with dnd status',
+            'total pa cases updated',
+            'identified ', 'duplicate email',
+            'companies sheet',
+        )):
+            return True
+
+        # ── Final output milestones ────────────────────────────────────────
+        if any(m in ml for m in (
             'processing completed successfully',
             'processing failed',
-            'error',
-            'warning',
-            'critical',
-            'failed',
-            'exception',
-            'validation failed',
-            'file validation successful',
-            'final processing completed successfully',
-            'error during final processing',
-            'error adding validation dropdowns',
-            'error creating',
-            'error in final processing',
-            'error during processing',
-            'error opening progress view',
-            'error updating database',
-            'error saving handlers',
-            'error loading handlers'
-        ]
-        
-        # Check if message contains important keywords
-        for keyword in important_keywords:
-            if keyword in message_lower:
-                return True
-        
-        # Show step progress messages (but not too verbose)
-        step_keywords = [
-            'step',
-            'phase',
-            'stage',
-            'progress',
-            'processing',
-            'creating',
-            'adding',
-            'validating',
-            'filtering',
-            'merging',
-            'saving',
-            'loading'
-        ]
-        
-        # Only show step messages if they're not too verbose
-        step_count = sum(1 for keyword in step_keywords if keyword in message_lower)
-        if step_count > 0 and len(message) < 100:  # Short step messages
+            'processing cancelled',
+            'final processing completed',
+            'critical validation issues',
+            'validation results',
+            'missing case numbers',
+            'missing handler',
+            'duplicate case numbers',
+            'output saved',
+            'file saved to',
+        )):
             return True
-        
-        # Show summary statistics
-        if any(keyword in message_lower for keyword in ['count:', 'total:', 'found', 'processed', 'created']):
-            return True
-        
-        # Don't show verbose debug messages, detailed processing info, or repetitive status updates
-        verbose_keywords = [
-            'debug',
-            'traceback',
-            'sample',
-            'checking',
-            'verifying',
-            'reading',
-            'writing',
-            'formatting',
-            'adjusting',
-            'auto-adjusting'
-        ]
-        
-        for keyword in verbose_keywords:
-            if keyword in message_lower:
-                return False
-        
-        # Don't show very long messages (likely detailed logs)
-        if len(message) > 150:
-            return False
-        
+
         return False
 
     def update_log(self, message):
@@ -1718,24 +1875,31 @@ class MainWindow(QMainWindow, V2TypographyMixin):
         return True
 
     def process(self):
-        """Process the files with the selected handlers (now threaded)"""
-        # Validate inputs with Toast feedback
+        """Process the files with the selected handlers (threaded)."""
         if not self._validate_inputs():
             return
-        
-        # Get selected handlers after validation
+
         selected_handlers = self.get_selected_handlers()
-        
+
         # Disable process button to prevent re-entry
-        self.findChild(QPushButton, "Process").setEnabled(False)
+        btn = self.findChild(QPushButton, "Process")
+        if btn:
+            btn.setEnabled(False)
+
+        # Reset & start progress UI
         self.progress_bar.setValue(0)
+        if hasattr(self, 'pct_label'):
+            self.pct_label.setText("0%")
+        if hasattr(self, 'step_label'):
+            self.step_label.setText("Preparing…")
+        if hasattr(self, 'spinner_label'):
+            self.spinner_label.setText(self._spinner_chars[0])
+        if hasattr(self, '_spinner_timer'):
+            self._spinner_timer.start()
+
         self.log_area.clear()
-        # Set up worker and thread
-        self.worker_thread = QThread()
-        
-        # Get Chat Agent info if selected
+
         chat_agent_info = self.get_chat_agent_info()
-        
         protect_companies = (
             self.protect_companies_checkbox.isChecked()
             if self.protect_companies_checkbox else False
@@ -1751,46 +1915,71 @@ class MainWindow(QMainWindow, V2TypographyMixin):
             chat_agent_info,
             protect_companies=protect_companies
         )
+        self.worker_thread = QThread()
         self.worker.moveToThread(self.worker_thread)
         self.worker.log_signal.connect(self.add_log)
-    # Progress-related UI updates removed per build requirements.
-    # Worker will continue to emit progress signals, but the main UI will not display them.
+        self.worker.progress_signal.connect(self._update_progress)
         self.worker.finished.connect(self.on_processing_finished)
         self.worker_thread.started.connect(self.worker.run)
         self.worker.finished.connect(self.worker_thread.quit)
         self.worker.finished.connect(self.worker.deleteLater)
         self.worker_thread.finished.connect(self.worker_thread.deleteLater)
+        self.worker_thread.finished.connect(self._on_thread_finished)
         self.worker_thread.start()
 
-    def on_processing_finished(self, success, message):
-        self.findChild(QPushButton, "Process").setEnabled(True)
+    def on_processing_finished(self, success: bool, message: str):
+        """Called when the worker thread completes (success or failure/cancel)."""
+        # Stop spinner
+        if hasattr(self, '_spinner_timer'):
+            self._spinner_timer.stop()
+        if hasattr(self, 'spinner_label'):
+            self.spinner_label.setText("✓" if success else "✗")
+
+        # Re-enable process button
+        btn = self.findChild(QPushButton, "Process")
+        if btn:
+            btn.setEnabled(True)
+
+        # Null out the worker reference — it will deleteLater itself.
+        # DO NOT null worker_thread here: it must stay alive until its own
+        # finished signal fires (otherwise Qt destroys C++ object while the
+        # OS thread is still winding down → "QThread: Destroyed while running").
+        self.worker = None
+
         if success:
             self.progress_bar.setValue(100)
-            self.add_log("\nProcessing completed successfully!")
-            self.add_log(f"Output saved to: {self.output_file_edit.text()}")
-            # Database update feature removed: skipping previous-file/database update step.
-            self.add_log("Database update skipped (feature removed in this build).")
-            # --- Enhanced popup with Open Sheet option ---
+            if hasattr(self, 'pct_label'):
+                self.pct_label.setText("100%")
+            if hasattr(self, 'step_label'):
+                self.step_label.setText("Done ✓")
+            self.add_log("Processing completed successfully!")
             try:
                 from PyQt5.QtCore import QUrl
                 from PyQt5.QtGui import QDesktopServices
-                
                 output_path = self.output_file_edit.text()
                 msg_box = QMessageBox(self)
                 msg_box.setWindowTitle("Success")
                 msg_box.setText("Files processed successfully!")
-                ok_btn = msg_box.addButton(QMessageBox.Ok)
+                msg_box.addButton(QMessageBox.Ok)
                 open_btn = msg_box.addButton("Open Sheet", QMessageBox.ActionRole)
                 msg_box.exec_()
                 if msg_box.clickedButton() == open_btn:
                     QDesktopServices.openUrl(QUrl.fromLocalFile(output_path))
             except ImportError as e:
-                self.add_log(f"Error importing QDesktopServices: {str(e)}")
-                # Fallback to simple message box
+                self.add_log(f"Error: {e}")
                 QMessageBox.information(self, "Success", "Files processed successfully!")
         else:
-            self.add_log("\nProcessing failed")
-            QMessageBox.warning(self, "Error", f"File processing failed: {message}")
+            # Check if it was a user-requested cancel
+            if "cancelled" in message.lower():
+                self.progress_bar.setValue(0)
+                if hasattr(self, 'pct_label'):
+                    self.pct_label.setText("")
+                if hasattr(self, 'step_label'):
+                    self.step_label.setText("Cancelled")
+                self.add_log("Processing cancelled by user.")
+            else:
+                self.add_log(f"Processing failed: {message}")
+                QMessageBox.warning(self, "Error", f"File processing failed:\n{message}")
     
     def save_handlers(self):
         """Save handlers to a JSON file"""

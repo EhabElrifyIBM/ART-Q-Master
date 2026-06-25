@@ -68,6 +68,9 @@ except ImportError:
 
 class FileProcessor:
     def __init__(self):
+        # Cancellation and progress flags — set before setup_logging so the helpers exist
+        self._cancelled = False
+        self._progress_callback = None
         self.setup_logging()
         self.file_path = None
         self.output_path = None
@@ -75,7 +78,7 @@ class FileProcessor:
         self.excluded_answers = None
         self.include_files = None
         self.previous_assignments = {}
-        
+
         # Initialize tracking attributes for summary
         self.bank_sutherland_updated_cases = []
         self.dnd_updated_cases = []
@@ -260,8 +263,11 @@ class FileProcessor:
             'completion_date': 'Completion Date'
         }
         
-    def setup_logging(self, log_callback=None):
+    def setup_logging(self, log_callback=None, progress_callback=None):
         """Set up logging configuration with optional GUI callback"""
+        # Store progress callback for step reporting
+        self._progress_callback = progress_callback
+
         class GUIHandler(logging.Handler):
             def __init__(self, callback):
                 super().__init__()
@@ -274,44 +280,57 @@ class FileProcessor:
 
         # Set up basic logging format
         formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-        
-        # File handler with detailed logging using UTF-8 encoding 
+        # Compact file formatter — no redundant timestamp on every line
+        file_formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
+
+        # File handler — INFO level only to keep log files small
         file_handler = logging.FileHandler('file_processing.log', encoding='utf-8')
-        file_handler.setFormatter(formatter)
-        file_handler.setLevel(logging.DEBUG)  # Log everything to file
-        
-        # Console handler — do not reassign sys.stdout.buffer (can fail in some environments)
+        file_handler.setFormatter(file_formatter)
+        file_handler.setLevel(logging.INFO)
+
+        # Console handler
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(formatter)
-        console_handler.setLevel(logging.INFO)
-        
-        # GUI handler (if callback provided) - only important messages
+        console_handler.setLevel(logging.WARNING)
+
+        # GUI handler (if callback provided) - WARNING+ and key INFO milestones
         handlers = [file_handler, console_handler]
         if log_callback is not None:
             gui_handler = GUIHandler(log_callback)
-            gui_handler.setFormatter(formatter)
-            gui_handler.setLevel(logging.INFO)  # Only INFO and above to GUI
+            gui_handler.setFormatter(logging.Formatter('%(message)s'))
+            gui_handler.setLevel(logging.INFO)
             handlers.append(gui_handler)
-        
-        # Configure logger
+
+        # Configure root logger
         logging.basicConfig(
-            level=logging.DEBUG,  # Allow all levels for file logging
+            level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s',
             handlers=handlers,
             force=True
         )
-        
+
         self.logger = logging.getLogger(__name__)
-        
-        # Create a separate logger for dropped cases tracking
+
+        # Separate logger for dropped cases — WARNING level to avoid giant files
         self.dropped_cases_logger = logging.getLogger('dropped_cases')
-        self.dropped_cases_logger.setLevel(logging.INFO)
-        
-        # Create dropped cases log file with UTF-8 encoding
-        dropped_handler = logging.FileHandler('dropped_cases.log', encoding='utf-8')
-        dropped_handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
-        self.dropped_cases_logger.addHandler(dropped_handler)
-        self.dropped_cases_logger.propagate = False  # Don't propagate to root logger
+        self.dropped_cases_logger.setLevel(logging.WARNING)
+        # Only add a dropped-cases file handler if one isn't already attached
+        if not self.dropped_cases_logger.handlers:
+            dropped_handler = logging.FileHandler('dropped_cases.log', encoding='utf-8')
+            dropped_handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
+            dropped_handler.setLevel(logging.WARNING)
+            self.dropped_cases_logger.addHandler(dropped_handler)
+        self.dropped_cases_logger.propagate = False
+
+    def _report_progress(self, pct: int, step_label: str = ""):
+        """Emit a progress update through the callback if registered."""
+        if getattr(self, '_progress_callback', None):
+            self._progress_callback(pct, step_label)
+
+    def _check_cancelled(self):
+        """Raise CancelledError if the processing has been cancelled."""
+        if getattr(self, '_cancelled', False):
+            raise InterruptedError("Processing cancelled by user")
         
     def get_raw_col(self, df, output_col):
         """Return the best matching raw column name for a given output column.
@@ -405,25 +424,21 @@ class FileProcessor:
             self.logger.error(f"Error logging status change: {str(e)}")
     
     def log_filtering_summary(self, filter_name, initial_count, final_count, dropped_reasons):
-        """Log a summary of filtering results with dropped case details"""
+        """Log a concise summary of filtering results."""
         try:
             dropped_count = initial_count - final_count
-            self.logger.info(f"\n{filter_name} Filter Summary:")
-            self.logger.info(f"  Initial count: {initial_count}")
-            self.logger.info(f"  Final count: {final_count}")
-            self.logger.info(f"  Dropped count: {dropped_count}")
-            
+            if dropped_count == 0:
+                return  # Nothing to report
+            parts = []
             if dropped_reasons:
-                self.logger.info(f"  Dropped reasons:")
                 for reason, cases in dropped_reasons.items():
-                    self.logger.info(f"    {reason}: {len(cases)} cases")
-                    # Log individual dropped cases to dropped cases log
-                    for case in cases:
-                        self.log_dropped_case(case, reason, filter_name)
-            
-            # Also log to dropped cases log
-            self.dropped_cases_logger.info(f"FILTER SUMMARY: {filter_name} - Dropped {dropped_count} out of {initial_count} cases")
-            
+                    if cases:
+                        parts.append(f"{reason}: {len(cases)}")
+            detail = " | ".join(parts) if parts else ""
+            self.logger.info(
+                f"Filter [{filter_name}]: {initial_count} → {final_count} "
+                f"(-{dropped_count}{': ' + detail if detail else ''})"
+            )
         except Exception as e:
             self.logger.error(f"Error logging filtering summary: {str(e)}")
     
@@ -499,79 +514,29 @@ class FileProcessor:
         """Filter cases based on CID and DMR rules"""
         try:
             original_len = len(df)
-            
-            self.logger.info("\nStarting CID/DMR filtering:")
-            self.logger.info(f"Initial count: {original_len}")
-            
-            # Debug: Print sample of cases before filtering
-            self.logger.debug("\nSample of cases before filtering:")
             case_col_name = self.get_raw_col(df, 'Case')
-            sample_cases = df[case_col_name].head() if case_col_name else []
-            for case in sample_cases:
-                self.logger.debug(f"Case value: {case}")
-            
-            # Create a mask for cases to keep
             case_col = df[case_col_name] if case_col_name else pd.Series(dtype=str)
-            
-            # 1. Find "not cid" cases (these should be kept)
+
+            # Keep "not cid" cases; remove plain CID / DMR cases
             not_cid_mask = case_col.str.contains(r'not\s*[\[\(]?cid[\]\)]?', case=False, regex=True, na=False)
-            not_cid_count = not_cid_mask.sum()
-            self.logger.info(f"\nFound {not_cid_count} cases with 'not cid'")
-            
-            # 2. Find CID cases
             cid_mask = case_col.str.contains(r'[\[\(]?cid[\]\)]?', case=False, regex=True, na=False)
-            cid_count = cid_mask.sum()
-            self.logger.info(f"Found {cid_count} cases with 'cid'")
-            
-            # 3. Find DMR cases
             dmr_mask = case_col.str.contains(r'[\[\(]?dmr[\]\)]?', case=False, regex=True, na=False)
-            dmr_count = dmr_mask.sum()
-            self.logger.info(f"Found {dmr_count} cases with 'dmr'")
-            
-            # Create the final mask
-            # Keep rows that either:
-            # 1. Contain "not cid", OR
-            # 2. Don't contain either "cid" or "dmr"
+
             mask = not_cid_mask | (~cid_mask & ~dmr_mask)
-            
-            # Store removed cases for analysis
             removed_cases = df[~mask].copy()
-            
-            # Apply the filter
             df_filtered = df[mask].copy()
-            
-            # Log detailed results
-            self.logger.info("\nCID/DMR filtering results:")
-            self.logger.info(f"Original count: {original_len}")
-            self.logger.info(f"After filtering: {len(df_filtered)}")
-            self.logger.info(f"Removed {len(removed_cases)} cases")
-            
-            # Log sample of removed cases with their full case text
-            if not removed_cases.empty:
-                self.logger.debug("\nSample of removed cases:")
-                sample_size = min(10, len(removed_cases))
-                for idx, row in removed_cases.head(sample_size).iterrows():
-                    case_text = row[case_col_name] if case_col_name in row else ''
-                    case_num_col = self.get_raw_col(df, 'Case Number')
-                    case_num = row[case_num_col] if case_num_col in row else ''
-                    self.logger.debug(f"Case Number: {case_num}")
-                    self.logger.debug(f"Case Text: {case_text}")
-                    self.logger.debug("---")
-            
-            # Use new logging system for dropped cases
+
             case_num_col = self.get_raw_col(df, 'Case Number')
             dropped_reasons = {
-                'CID Case': removed_cases[cid_mask & ~not_cid_mask][case_num_col].tolist() if case_num_col else [],
-                'DMR Case': removed_cases[dmr_mask][case_num_col].tolist() if case_num_col else []
+                'CID': removed_cases[cid_mask & ~not_cid_mask][case_num_col].tolist() if case_num_col else [],
+                'DMR': removed_cases[dmr_mask][case_num_col].tolist() if case_num_col else []
             }
-            
             self.log_filtering_summary("CID/DMR", original_len, len(df_filtered), dropped_reasons)
-            
+
             return df_filtered, removed_cases
-            
+
         except Exception as e:
             self.logger.error(f"Error in filter_case: {str(e)}")
-            self.logger.error("Stack trace:", exc_info=True)
             raise
 
     def validate_columns(self, df):
@@ -582,57 +547,15 @@ class FileProcessor:
         self.logger.info("\n=== Column Validation Analysis ===")
         self.logger.info("\nAvailable columns in file:")
         for col in df.columns:
-            # Check column contents
-            null_count = df[col].isnull().sum()
-            empty_count = (df[col].fillna('').astype(str).str.strip() == '').sum()
-            total_rows = len(df)
-            self.logger.info(f"'{col}': {null_count} null, {empty_count} empty out of {total_rows} total rows")
-            
-            # Sample non-empty values if they exist
-            non_empty_values = df[df[col].notna() & (df[col].astype(str).str.strip() != '')][col].head(3).tolist()
-            if non_empty_values:
-                self.logger.info(f"  Sample values: {non_empty_values}")
-        
-        self.logger.info("\nExpected output columns:")
-        for out_col in self.output_columns:
-            self.logger.info(f"'{out_col}'")
-            # Track potential sources for this column
-            potential_sources = self.raw_to_output.get(out_col, [])
-            self.logger.info(f"  Potential source columns: {potential_sources}")
-            
-            # Check if any potential sources exist in df
-            found_sources = [src for src in potential_sources if src in df.columns]
-            if found_sources:
-                self.logger.info(f"  Found these source columns: {found_sources}")
-                for src in found_sources:
-                    null_count = df[src].isnull().sum()
-                    empty_count = (df[src].fillna('').astype(str).str.strip() == '').sum()
-                    self.logger.info(f"    '{src}': {null_count} null, {empty_count} empty values")
-            else:
-                self.logger.warning(f"  No source columns found for {out_col}")
-        
-        # Column mapping analysis
-        self.logger.info("\n=== Column Mapping Analysis ===")
+            # (column content checks removed — too verbose for normal runs)
+            pass
+
         for out_col in self.output_columns:
             raw_col = self.get_raw_col(df, out_col)
             if raw_col:
                 found_columns.append(f"{out_col}: Found as '{raw_col}'")
-                # Analyze content of found column
-                null_count = df[raw_col].isnull().sum()
-                empty_count = (df[raw_col].fillna('').astype(str).str.strip() == '').sum()
-                total_rows = len(df)
-                self.logger.info(f"\nAnalysis for {out_col} -> {raw_col}:")
-                self.logger.info(f"  Total rows: {total_rows}")
-                self.logger.info(f"  Null values: {null_count} ({(null_count/total_rows)*100:.1f}%)")
-                self.logger.info(f"  Empty strings: {empty_count} ({(empty_count/total_rows)*100:.1f}%)")
-                
-                # Sample values
-                sample = df[df[raw_col].notna() & (df[raw_col].astype(str).str.strip() != '')][raw_col].head()
-                if not sample.empty:
-                    self.logger.info(f"  Sample values: {sample.tolist()}")
             else:
                 missing_columns.append(f"{out_col}")
-                self.logger.error(f"\nNo mapping found for {out_col}")
                 self.logger.error(f"Expected sources: {self.raw_to_output.get(out_col, [])}")
         
         if missing_columns:
@@ -663,21 +586,9 @@ class FileProcessor:
         try:
             self.logger.info("Ensuring output columns with proper mapping...")
 
-            # IMPORTANT: Convert Completion Date Timestamps to strings early
+            # Convert Completion Date Timestamps to strings early
             if 'Completion Date' in df.columns:
-                self.logger.info("Converting Completion Date Timestamps to strings...")
                 df['Completion Date'] = df['Completion Date'].astype(str)
-                self.logger.info("Completion Date converted to string format")
-                
-                # DIAGNOSTIC: Check if conversion actually worked
-                non_empty_after_early_conversion = (df['Completion Date'].fillna('').astype(str).str.strip() != '').sum()
-                self.logger.info(f"DIAGNOSTIC ensure_output_columns: After early conversion - {non_empty_after_early_conversion}/{len(df)} non-empty")
-                if non_empty_after_early_conversion > 0:
-                    samples_early = df[df['Completion Date'].fillna('').astype(str).str.strip() != '']['Completion Date'].head(3).tolist()
-                    self.logger.info(f"DIAGNOSTIC ensure_output_columns: Sample values after early conversion: {samples_early}")
-                else:
-                    all_samples_early = df['Completion Date'].head(3).tolist()
-                    self.logger.info(f"DIAGNOSTIC ensure_output_columns: ALL values after early conversion: {all_samples_early}")
 
             # Ensure df has a normalized Case Number column for lookups
             if 'Case Number' not in df.columns:
@@ -736,238 +647,112 @@ class FileProcessor:
 
                 # Process each output column
             for out_col in self.output_columns:
-                # Log the current column being processed
-                self.logger.info(f"\nProcessing output column: {out_col}")
-                
-                # Check current state of column
-                if out_col in df.columns:
-                    null_count = df[out_col].isnull().sum()
-                    empty_count = (df[out_col].fillna('').astype(str).str.strip() == '').sum()
-                    self.logger.info(f"Column '{out_col}' exists: {null_count} null values, {empty_count} empty strings")
-                else:
-                    self.logger.info(f"Column '{out_col}' does not exist yet")
-                
-                # Check if this is a critical field needing special handling
-                # Critical fields should ALWAYS be processed to fill in missing values
                 if out_col in critical_fields:
                     source_cols = critical_fields[out_col]
                     found_data = False
-                    
-                    # Initialize the output column if it doesn't exist
+
                     if out_col not in df.columns:
                         df[out_col] = ''
                         created.append(out_col)
-                        self.logger.info(f"Created column {out_col}")
-                    
-                    # Try each source column in strict priority order
+
                     for source_col in source_cols:
-                        self.logger.info(f"\nTrying source column '{source_col}' for {out_col}")
-                        
-                        # Skip if source and target are the same column - column already has its data
                         if source_col == out_col:
-                            self.logger.info(f"Source and target are the same column - skipping update (data already present)")
                             found_data = True
                             continue
-                        
-                        if source_col in df.columns:
-                            # Log the source column's current state
-                            source_null = df[source_col].isnull().sum()
-                            source_empty = (df[source_col].fillna('').astype(str).str.strip() == '').sum()
-                            self.logger.info(f"Source column exists with {source_null} null values, {source_empty} empty strings")
-                            
-                            # Only copy to empty cells or cells that need updating
-                            empty_mask = (df[out_col].fillna('').astype(str).str.strip() == '')
-                            empty_count = empty_mask.sum()
-                            self.logger.info(f"Target column has {empty_count} empty cells to potentially fill")
-                            
-                            source_values = df[source_col].fillna('').astype(str).str.strip()
-                            valid_source_mask = (source_values != '')
-                            valid_count = valid_source_mask.sum()
-                            self.logger.info(f"Source column has {valid_count} non-empty values available")
-                            
-                            # Update only where we have valid source values and target is empty
-                            update_mask = empty_mask & valid_source_mask
-                            updates_possible = update_mask.sum()
-                            self.logger.info(f"Found {updates_possible} cells that can be updated")
-                            
-                            if update_mask.any():
-                                # For Completion Date, convert Timestamp to string if needed
-                                if out_col == 'Completion Date':
-                                    # Convert Timestamp objects to strings in the proper format
-                                    df.loc[update_mask, out_col] = df.loc[update_mask, source_col].astype(str)
-                                    self.logger.info(f"Special handling: Converted Timestamps to strings for Completion Date")
-                                else:
-                                    df.loc[update_mask, out_col] = df.loc[update_mask, source_col]
-                                found_data = True
-                                self.logger.info(f"Successfully mapped {source_col} -> {out_col} ({update_mask.sum()} rows)")
-                                
-                                # Debug logging for ALL updated values
-                                updates = df[update_mask]
-                                self.logger.info("\nDetailed update log:")
-                                for idx, row in updates.iterrows():
-                                    self.logger.info(f"Updated {out_col} for case {row['Case Number']}: '{row[source_col]}' -> '{df.loc[idx, out_col]}'")
-                                
-                                # Log sample of cells that couldn't be updated
-                                still_empty = df[empty_mask & ~update_mask]
-                                if not still_empty.empty:
-                                    self.logger.warning(f"\nSample of cases where update failed from this source:")
-                                    for _, row in still_empty.head().iterrows():
-                                        self.logger.warning(f"Case {row['Case Number']}: Source value: '{row.get(source_col, 'N/A')}', Current target value: '{row.get(out_col, 'N/A')}'")
-                            else:
-                                self.logger.warning(f"No updates possible from {source_col} to {out_col}")
-                    
-                    # Double-check if we still have empty values after trying all sources
-                    still_empty = (df[out_col].fillna('').astype(str).str.strip() == '').sum()
-                    if still_empty > 0:
-                        self.logger.warning(f"{still_empty} rows still missing {out_col} after checking all source columns")
-                        # Log some examples of cases with missing data
-                        empty_examples = df[df[out_col].fillna('').astype(str).str.strip() == '']['Case Number'].head(5).tolist()
-                        self.logger.warning(f"Example cases missing {out_col}: {empty_examples}")
-                    else:
-                        self.logger.info(f"Successfully populated all rows for {out_col}")
-                else:
-                    # Standard column handling - skip if already exists and has data
-                    if out_col in df.columns and not df[out_col].isnull().all():
-                        # Check if column has any meaningful data
-                        has_data = (df[out_col].fillna('').astype(str).str.strip() != '').any()
-                        if has_data:
-                            self.logger.info(f"Column '{out_col}' already has data - skipping")
+                        if source_col not in df.columns:
                             continue
-                    
+
+                        empty_mask = (df[out_col].fillna('').astype(str).str.strip() == '')
+                        source_values = df[source_col].fillna('').astype(str).str.strip()
+                        update_mask = empty_mask & (source_values != '')
+
+                        if update_mask.any():
+                            if out_col == 'Completion Date':
+                                df.loc[update_mask, out_col] = df.loc[update_mask, source_col].astype(str)
+                            else:
+                                df.loc[update_mask, out_col] = df.loc[update_mask, source_col]
+                            found_data = True
+
+                    still_empty = (df[out_col].astype(str).str.strip() == '').sum()
+                    if still_empty > 0:
+                        self.logger.warning(f"{still_empty} rows missing {out_col} after column mapping")
+                else:
+                    if out_col in df.columns:
+                        has_data = (df[out_col].astype(str).str.strip() != '').any()
+                        if has_data:
+                            continue
+
                     raw_col = self.get_raw_col(df, out_col)
                     if raw_col and raw_col in df.columns:
-                        # Check data in raw column before mapping
-                        non_empty = df[raw_col].fillna('').astype(str).str.strip() != ''
+                        non_empty = df[raw_col].astype(str).str.strip() != ''
                         if non_empty.any():
                             df[out_col] = df[raw_col]
                             created.append(out_col)
-                            self.logger.info(f"Standard mapping: {raw_col} -> {out_col} ({non_empty.sum()} non-empty values)")
-                            # Log sample of mapped values
-                            sample = df[non_empty][raw_col].head(3)
-                            self.logger.info(f"Sample values mapped: {sample.tolist()}")
-                        else:
-                            self.logger.warning(f"Raw column {raw_col} found but contains no non-empty values")
+                        # silent skip if column is empty — no noise in the log
                     elif out_col not in df.columns:
                         df[out_col] = ''
                         created.append(out_col)
-                        self.logger.info(f"Created empty column: {out_col}")
 
             # Fill in from previous file for existing cases
             if prev_df is not None and not prev_df.empty and 'Case Number' in prev_df.columns:
-                self.logger.info("Checking previous file for existing cases...")
-                
-                # First normalize case numbers in previous file
                 prev_df['Case Number'] = prev_df['Case Number'].apply(self.normalize_case_number)
                 prev_case_nums = set(prev_df['Case Number'].dropna())
-                self.logger.info(f"Found {len(prev_case_nums)} unique case numbers in previous file")
-                
-                # Track which cases and columns are populated from previous file
-                prev_file_updates = defaultdict(list)
-                raw_file_values = defaultdict(list)
-                
-                for out_col in self.output_columns:
-                    # SKIP Completion Date - it should NOT be overwritten by previous file data
-                    # It was just properly populated from the raw file
-                    if out_col == 'Completion Date':
-                        self.logger.info(f"Skipping {out_col} - preserving values from raw file")
-                        continue
-                    
-                    if out_col in prev_df.columns:
-                        try:
-                            # Log column state before population
-                            self.logger.info(f"\nPopulating {out_col} from previous file:")
-                            self.logger.info("Current state:")
-                            non_empty_current = (df[out_col].fillna('').astype(str).str.strip() != '').sum() if out_col in df.columns else 0
-                            self.logger.info(f"  Non-empty values in current data: {non_empty_current}")
-                            
-                            updates = 0
-                            for idx, row in df.iterrows():
-                                case_num = self.normalize_case_number(row['Case Number'])
-                                if case_num in prev_case_nums:
-                                    # Store original value before update
-                                    orig_val = str(row.get(out_col, '')).strip()
-                                    if orig_val:
-                                        raw_file_values[case_num].append(f"{out_col}={orig_val}")
-                                        
-                                    # Get value from previous file
-                                    prev_val = prev_df[prev_df['Case Number'] == case_num][out_col].iloc[0]
-                                    if pd.notna(prev_val) and str(prev_val).strip():
-                                        df.at[idx, out_col] = prev_val
-                                        prev_file_updates[case_num].append(f"{out_col}={prev_val}")
-                                        updates += 1
-                            
-                            self.logger.info(f"  Updated {updates} cases from previous file")
-                        except Exception as e:
-                            self.logger.warning(f"Error copying {out_col} from previous data: {str(e)}")
 
-                # Verify and fix critical fields for new cases
+                for out_col in self.output_columns:
+                    if out_col == 'Completion Date':
+                        continue  # preserve raw file value
+                    if out_col not in prev_df.columns:
+                        continue
+                    try:
+                        updates = 0
+                        for idx, row in df.iterrows():
+                            case_num = self.normalize_case_number(row['Case Number'])
+                            if case_num in prev_case_nums:
+                                prev_val = prev_df[prev_df['Case Number'] == case_num][out_col].iloc[0]
+                                if pd.notna(prev_val) and str(prev_val).strip():
+                                    df.at[idx, out_col] = prev_val
+                                    updates += 1
+                        if updates:
+                            self.logger.debug(f"Back-filled {updates} cases for '{out_col}' from previous file")
+                    except Exception as e:
+                        self.logger.warning(f"Error copying {out_col} from previous data: {e}")
+
+            # Verify and fix critical fields for new cases
             if prev_df is not None:
-                self.logger.info("\n=== Beginning New Cases Verification ===")
-                
-                # Normalize case numbers for comparison
                 df['_normalized_case'] = df['Case Number'].apply(self.normalize_case_number)
                 prev_df['_normalized_case'] = prev_df['Case Number'].apply(self.normalize_case_number)
-                
-                # Identify new cases
+
                 current_cases = set(df['_normalized_case'])
                 previous_cases = set(prev_df['_normalized_case'])
                 new_case_nums = current_cases - previous_cases
-                
-                self.logger.info(f"Total cases in current file: {len(current_cases)}")
-                self.logger.info(f"Total cases in previous file: {len(previous_cases)}")
-                self.logger.info(f"Number of new cases identified: {len(new_case_nums)}")
-                
-                # Log the first few new cases for verification
-                sample_new_cases = list(new_case_nums)[:5]
-                self.logger.info(f"Sample of new cases: {sample_new_cases}")
-                
+
                 if new_case_nums:
-                    self.logger.info(f"\n=== Verifying Critical Fields for {len(new_case_nums)} New Cases ===")
-                    
                     for field, source_cols in critical_fields.items():
                         if field not in df.columns:
-                            df[field] = ''  # Ensure the column exists
-                            
-                        # Check which new cases are missing this field
+                            df[field] = ''
+
                         new_cases_mask = df['_normalized_case'].isin(new_case_nums)
-                        empty_mask = (df[field].fillna('').astype(str).str.strip() == '')
-                        missing_mask = new_cases_mask & empty_mask
-                        
+                        missing_mask = new_cases_mask & (df[field].astype(str).str.strip() == '')
+
                         if missing_mask.any():
-                            missing_count = missing_mask.sum()
-                            self.logger.warning(f"\nFound {missing_count} new cases missing {field}")
-                            
-                            # Try to fill missing values from each source column
                             for source_col in source_cols:
-                                if source_col in df.columns:
-                                    source_values = df[source_col].fillna('').astype(str).str.strip()
-                                    valid_source = (source_values != '')
-                                    update_mask = missing_mask & valid_source
-                                    
-                                    if update_mask.any():
-                                        df.loc[update_mask, field] = df.loc[update_mask, source_col]
-                                        self.logger.info(f"Filled {update_mask.sum()} missing {field} values from {source_col}")
-                                        
-                                        # Update the missing mask
-                                        missing_mask = new_cases_mask & (df[field].fillna('').astype(str).str.strip() == '')
-                                        
-                                        if not missing_mask.any():
-                                            self.logger.info(f"Successfully filled all missing {field} values")
-                                            break
-                            
-                            # Final check for any remaining missing values
+                                if source_col not in df.columns:
+                                    continue
+                                source_values = df[source_col].astype(str).str.strip()
+                                update_mask = missing_mask & (source_values != '')
+                                if update_mask.any():
+                                    df.loc[update_mask, field] = df.loc[update_mask, source_col]
+                                    missing_mask = new_cases_mask & (df[field].astype(str).str.strip() == '')
+                                    if not missing_mask.any():
+                                        break
+
                             still_missing = missing_mask.sum()
                             if still_missing > 0:
-                                missing_cases = df[missing_mask]['Case Number'].tolist()[:5]
-                                self.logger.error(f"CRITICAL: Still missing {field} for {still_missing} new cases")
-                                self.logger.error(f"Example cases missing {field}: {missing_cases}")
-                        else:
-                            self.logger.info(f"All new cases have {field} populated")
-                    
-                    # Clean up temporary column
-                    df = df.drop(columns=['_normalized_case'])
-                    if '_normalized_case' in prev_df.columns:
-                        prev_df = prev_df.drop(columns=['_normalized_case'])
+                                self.logger.warning(f"{still_missing} new cases still missing '{field}'")
+
+                df = df.drop(columns=['_normalized_case'])
+                if '_normalized_case' in prev_df.columns:
+                    prev_df = prev_df.drop(columns=['_normalized_case'])
 
             return created
 
@@ -994,74 +779,63 @@ class FileProcessor:
     def process_files(self, raw_file, prev_file, sms_file, email_file, output_file, selected_handlers, chat_agent_info=None, protect_companies=False):
         """Process the input files"""
         try:
-            self.logger.info("\n=== Starting file processing ===")
-            self.logger.info(f"Selected handlers: {selected_handlers}")
+            self._cancelled = False
+            self._report_progress(0, "Starting…")
+            self.logger.info(f"=== Starting file processing — handlers: {', '.join(selected_handlers)} ===")
             if chat_agent_info:
-                self.logger.info(f"Chat Agent enabled: {chat_agent_info['supporter_name']} (15% capacity)")
-            
-            # Read the raw file
-            self.logger.info(f"\nReading raw file: {raw_file}")
+                self.logger.info(f"Chat Agent: {chat_agent_info.get('supporter_name','?')} (15% capacity)")
+
+            # ── Step 1 / 10: Load raw file ───────────────────────────────────
+            self._report_progress(5, "Step 1/10 — Loading raw file…")
+            self.logger.info("Step 1/10 — Loading raw file…")
+            self._check_cancelled()
             df = pd.read_excel(raw_file)
-            
-            # Log file loaded (removed verbose per-column sample logging)
-            self.logger.info(f"Loaded {len(df)} records with {len(df.columns)} columns")
-            
-            # Clean and normalize all string columns
+            self.logger.info(f"Loaded raw file: {len(df)} records, {len(df.columns)} columns")
+
             string_cols = df.select_dtypes(include=['object']).columns
             for col in string_cols:
                 df[col] = df[col].fillna('').astype(str).str.strip()
-                
-            # Normalize ID columns
             df = self._normalize_id_columns(df)
             initial_count = len(df)
-            
-            self.logger.info(f"Initial record count after normalization: {initial_count}")
-            
-            # Load previous file if it exists
+
+            # ── Step 2 / 10: Load previous file ─────────────────────────────
+            self._report_progress(10, "Step 2/10 — Loading previous file…")
+            self.logger.info("Step 2/10 — Loading previous file…")
+            self._check_cancelled()
             prev_df = None
             if prev_file and os.path.exists(prev_file):
-                self.logger.info(f"\nLoading previous file: {prev_file}")
                 try:
                     prev_df = self.load_previous_file(prev_file)
-                    self.logger.info(f"Previous file loaded successfully with {len(prev_df)} records")
+                    self.logger.info(f"Previous file: {len(prev_df)} records")
                 except Exception as e:
-                    self.logger.error(f"Error loading previous file: {str(e)}")
-                    self.logger.warning("Continuing without previous file data")
+                    self.logger.error(f"Error loading previous file: {e}")
                     prev_df = None
-            
-            # Validate columns before processing
+
+            # Validate / standardise columns
             valid = self.validate_columns(df)
             if not valid:
-                # Instead of failing immediately, attempt to standardize column names
-                self.logger.info("Standardizing column names for consistency...")
-                created_cols = self.ensure_output_columns(df, prev_df)
-                self.logger.info(f"Standardized column names to: {created_cols}")
-                # Re-run validation
+                self.ensure_output_columns(df, prev_df)
                 if not self.validate_columns(df):
                     raise ValueError("Missing required columns in input file after attempted standardization")
-            
-            # Clean and normalize the relevant columns
-            self.logger.info("\nCleaning and normalizing columns...")
-            
-            # CRITICAL: Save Completion Date before filtering, as it might be lost during operations
+
+            # ── Step 3 / 10: Apply filters ───────────────────────────────────
+            self._report_progress(15, "Step 3/10 — Applying filters…")
+            self.logger.info("Step 3/10 — Applying filters…")
+            self._check_cancelled()
+
+            # Save Completion Date before filtering
             completion_date_backup = None
             if 'Completion Date' in df.columns:
                 completion_date_backup = df['Completion Date'].copy()
-                self.logger.info(f"DIAGNOSTIC: Saved Completion Date backup with {(completion_date_backup.fillna('').astype(str).str.strip() != '').sum()} non-empty values")
-            
+
             for out_col in ['Work Order Status', 'Case Reason', 'Closing Code', 'Case', 'Case Number']:
                 raw_col = self.get_raw_col(df, out_col)
                 if raw_col:
                     df[raw_col] = self.clean_string_series(df[raw_col])
-            
-            # Apply filters with detailed tracking
-            self.logger.info("\n=== Applying Filters ===")
-            
-            # Track all dropped cases for comprehensive logging
-            all_dropped_cases = []
+
             dropped_cases_details = {}
-            
-            # 1. Work Order Status filter
+
+            # 3a. Work Order Status
             if not isinstance(df, pd.DataFrame):
                 df = pd.DataFrame(df)
             excluded_wo_status = [x.strip().lower() for x in self.excluded_work_order_status]
@@ -1070,21 +844,8 @@ class FileProcessor:
             removed_wo = df[~mask_wo]
             if not isinstance(removed_wo, pd.DataFrame):
                 removed_wo = pd.DataFrame(removed_wo)
-            
-            # DIAGNOSTIC: Check Completion Date before Work Order Status filter
-            if 'Completion Date' in df.columns:
-                completion_date_non_empty = (df['Completion Date'].fillna('').astype(str).str.strip() != '').sum()
-                self.logger.info(f"DIAGNOSTIC: Before Work Order Status filter - Completion Date has {completion_date_non_empty}/{len(df)} non-empty")
-            
             df = df[mask_wo]
-            
-            # DIAGNOSTIC: Check Completion Date after Work Order Status filter
-            if 'Completion Date' in df.columns:
-                completion_date_non_empty = (df['Completion Date'].fillna('').astype(str).str.strip() != '').sum()
-                self.logger.info(f"DIAGNOSTIC: After Work Order Status filter - Completion Date has {completion_date_non_empty}/{len(df)} non-empty")
             wo_status_count = len(df)
-            self.logger.info(f"\n1. After Work Order Status filter: {wo_status_count} records remaining")
-            # Log dropped cases from Work Order Status filter
             if not removed_wo.empty and wo_status_col:
                 dropped_reasons = {}
                 case_num_col = self.get_raw_col(df, 'Case Number')
@@ -1093,13 +854,12 @@ class FileProcessor:
                     if not status_cases.empty and case_num_col:
                         dropped_reasons[f"Status: {status}"] = status_cases[case_num_col].tolist()
                 self.log_filtering_summary("Work Order Status", initial_count, wo_status_count, dropped_reasons)
-                # Add to dropped cases details for summary table
                 for status in excluded_wo_status:
                     status_cases = removed_wo[removed_wo[wo_status_col] == status]
                     if not status_cases.empty and case_num_col:
                         dropped_cases_details[f"Work Order Status: {status}"] = status_cases[case_num_col].tolist()
-            
-            # 2. Case Reason filter
+
+            # 3b. Case Reason
             if not isinstance(df, pd.DataFrame):
                 df = pd.DataFrame(df)
             excluded_case_reasons = [x.strip().lower() for x in self.excluded_case_reasons]
@@ -1110,8 +870,6 @@ class FileProcessor:
                 removed_case = pd.DataFrame(removed_case)
             df = df[mask_case]
             case_reason_count = len(df)
-            self.logger.info(f"\n2. After Case Reason filter: {case_reason_count} records remaining")
-            # Log dropped cases from Case Reason filter
             if not removed_case.empty and case_reason_col:
                 dropped_reasons = {}
                 case_num_col = self.get_raw_col(df, 'Case Number')
@@ -1120,13 +878,12 @@ class FileProcessor:
                     if not reason_cases.empty and case_num_col:
                         dropped_reasons[f"Reason: {reason}"] = reason_cases[case_num_col].tolist()
                 self.log_filtering_summary("Case Reason", wo_status_count, case_reason_count, dropped_reasons)
-                # Add to dropped cases details for summary table
                 for reason in excluded_case_reasons:
                     reason_cases = removed_case[removed_case[case_reason_col] == reason]
                     if not reason_cases.empty and case_num_col:
                         dropped_cases_details[f"Case Reason: {reason}"] = reason_cases[case_num_col].tolist()
-            
-            # 3. Closing Code filter
+
+            # 3c. Closing Code
             if not isinstance(df, pd.DataFrame):
                 df = pd.DataFrame(df)
             excluded_closing_codes = [x.strip().lower() for x in self.excluded_closing_codes]
@@ -1137,15 +894,11 @@ class FileProcessor:
                 removed_closing = pd.DataFrame(removed_closing)
             df = df[mask_closing]
             closing_code_count = len(df)
-            self.logger.info(f"\n3. After Closing Code filter: {closing_code_count} records remaining")
-            
-            # CRITICAL: Restore Completion Date after filtering
+
+            # Restore Completion Date after filtering
             if completion_date_backup is not None and 'Completion Date' in df.columns:
-                # Only restore for rows that are still in df
                 df.loc[df.index, 'Completion Date'] = completion_date_backup.loc[df.index]
-                restored_non_empty = (df['Completion Date'].fillna('').astype(str).str.strip() != '').sum()
-                self.logger.info(f"DIAGNOSTIC: Restored Completion Date after filters - {restored_non_empty}/{len(df)} non-empty")
-            # Log dropped cases from Closing Code filter
+
             if not removed_closing.empty and closing_code_col:
                 dropped_reasons = {}
                 case_num_col = self.get_raw_col(df, 'Case Number')
@@ -1154,50 +907,43 @@ class FileProcessor:
                     if not code_cases.empty and case_num_col:
                         dropped_reasons[f"Closing Code: {code}"] = code_cases[case_num_col].tolist()
                 self.log_filtering_summary("Closing Code", case_reason_count, closing_code_count, dropped_reasons)
-                # Add to dropped cases details for summary table
                 for code in excluded_closing_codes:
                     code_cases = removed_closing[removed_closing[closing_code_col] == code]
                     if not code_cases.empty and case_num_col:
                         dropped_cases_details[f"Closing Code: {code}"] = code_cases[case_num_col].tolist()
-            
-            # 4. Apply CID/DMR filter with detailed logging
-            self.logger.info(f"\n4. Applying CID/DMR filter:")
-            pre_cid_count = len(df)
+
+            # ── Step 4 / 10: CID/DMR filter ──────────────────────────────────
+            self._report_progress(22, "Step 4/10 — CID/DMR filter…")
+            self.logger.info("Step 4/10 — CID/DMR filter…")
+            self._check_cancelled()
             df, removed_cases = self.filter_case(df)
             if not isinstance(removed_cases, pd.DataFrame):
                 removed_cases = pd.DataFrame(removed_cases)
             post_cid_count = len(df)
-            self.logger.info(f"   Records remaining: {post_cid_count}")
-            
-            # Add CID/DMR dropped cases to details
+
             if not removed_cases.empty:
-                # Check if there are CID and DMR cases
                 case_col = self.columns['case']
                 cid_mask = removed_cases[case_col].astype(str).str.contains('cid', case=False, na=False)
                 dmr_mask = removed_cases[case_col].astype(str).str.contains('dmr', case=False, na=False)
-                
                 if not cid_mask.empty:
                     cid_cases = removed_cases[cid_mask][self.columns['case_number']].tolist()
                     if cid_cases:
                         dropped_cases_details['CID Case'] = cid_cases
-                
                 if not dmr_mask.empty:
                     dmr_cases = removed_cases[dmr_mask][self.columns['case_number']].tolist()
                     if dmr_cases:
                         dropped_cases_details['DMR Case'] = dmr_cases
-            
-            # 5. Remove duplicate cases based on Case Number
-            self.logger.info(f"\n5. Removing duplicate cases:")
-            pre_duplicate_count = len(df)
-            # Normalize to integer case numbers for accurate deduplication
+
+            # ── Step 5 / 10: Deduplication ────────────────────────────────────
+            self._report_progress(28, "Step 5/10 — Removing duplicates…")
+            self.logger.info("Step 5/10 — Removing duplicates…")
+            self._check_cancelled()
             if self.columns['case_number'] in df.columns:
                 df[self.columns['case_number']] = df[self.columns['case_number']].apply(self.normalize_case_number)
                 df[self.columns['case_number']] = pd.Series(pd.to_numeric(df[self.columns['case_number']], errors='coerce')).astype('Int64')
-            
-            # Sort by Created On date (newest first) before removing duplicates
+
             created_on_col = self.columns['created_on']
             if created_on_col in df.columns:
-                self.logger.info(f"   Sorting by '{created_on_col}' to keep newest duplicate cases")
                 # Parse Created On to datetime for proper sorting
                 try:
                     # Remove extra spaces and parse the date
@@ -1210,57 +956,29 @@ class FileProcessor:
                     
                     # Sort by the parsed date in descending order (newest first)
                     df = df.sort_values('_created_on_parsed', ascending=False, na_position='last')
-                    self.logger.info(f"   Successfully sorted by Created On date")
                 except Exception as e:
-                    self.logger.warning(f"   Could not parse Created On dates for sorting: {str(e)}")
-                    # Fallback: sort by original column as string
+                    self.logger.warning(f"Could not sort by Created On: {e}")
                     df = df.sort_values(created_on_col, ascending=False, na_position='last')
-            
+
+            pre_duplicate_count = len(df)
             duplicates = df[df.duplicated(subset=[self.columns['case_number']], keep='first')]
             df = df.dropna(subset=[self.columns['case_number']]).drop_duplicates(subset=[self.columns['case_number']], keep='first')
-            
-            # Drop the temporary sorting column if it exists
             if '_created_on_parsed' in df.columns:
                 df = df.drop(columns=['_created_on_parsed'])
-            
+
             post_duplicate_count = len(df)
-            self.logger.info(f"   Records remaining: {post_duplicate_count}")
-            
-            # Log dropped cases from Duplicate filter
             if not duplicates.empty:
                 dropped_reasons = {"Duplicate Case Number": duplicates[self.columns['case_number']].tolist()}
                 self.log_filtering_summary("Duplicate Removal", pre_duplicate_count, post_duplicate_count, dropped_reasons)
-                
-                # Add to dropped cases details for summary table
                 dropped_cases_details['Duplicate Case Number'] = duplicates[self.columns['case_number']].tolist()
 
-            # --- Log cases present in both raw and previous file but missing from output ---
-            if prev_df is not None and not prev_df.empty:
-                # Integer-normalize for reliable comparisons
-                prev_cn = pd.Series(prev_df['Case Number']).apply(self.normalize_case_number).astype('Int64')
-                raw_cn = pd.Series(df['Case Number']).apply(self.normalize_case_number).astype('Int64')
-                out_cn = pd.Series(df['Case Number']).apply(self.normalize_case_number).astype('Int64')
-                prev_case_numbers = set(prev_cn.dropna().tolist())
-                raw_case_numbers = set(raw_cn.dropna().tolist())
-                output_case_numbers = set(out_cn.dropna().tolist())
-                missing_in_output = (prev_case_numbers & raw_case_numbers) - output_case_numbers
-                if missing_in_output:
-                    self.logger.warning(f"Cases present in both raw and previous file but missing from output: {missing_in_output}")
-                    for case_num in missing_in_output:
-                        self.log_dropped_case(case_num, "Missing in output after filtering", "Present in both raw and previous file")
-
-            # Final count after all filters
             filtered_count = len(df)
-            self.logger.info(f"\n=== Filtering Summary ===")
-            self.logger.info(f"Initial count: {initial_count}")
-            self.logger.info(f"After Work Order Status filter: {wo_status_count}")
-            self.logger.info(f"After Case Reason filter: {case_reason_count}")
-            self.logger.info(f"After Closing Code filter: {closing_code_count}")
-            self.logger.info(f"After CID/DMR filter: {post_duplicate_count}")
-            self.logger.info(f"After Duplicate Removal: {filtered_count}")
-            self.logger.info(f"Total removed: {initial_count - filtered_count}")
+            self.logger.info(
+                f"Filtering done: {initial_count} → {filtered_count} "
+                f"(-{initial_count - filtered_count} removed)"
+            )
 
-            # Calculate previous file statistics if prev_df is available
+            # Previous-file statistics
             prev_stats = {}
             if prev_df is not None and not prev_df.empty:
                 prev_cn = pd.Series(prev_df['Case Number']).apply(self.normalize_case_number).astype('Int64')
@@ -1270,7 +988,6 @@ class FileProcessor:
                 prev_stats['Initial Count'] = len(prev_df)
                 prev_stats['Matching Cases'] = len(prev_case_numbers & raw_case_numbers)
                 prev_stats['New Cases'] = len(raw_case_numbers - prev_case_numbers)
-                # Updated cases: cases in both, but with any field different (simplified: count all matches as updated)
                 updated_cases = 0
                 for case_num in (prev_case_numbers & raw_case_numbers):
                     prev_row = prev_df[prev_df['Case Number'] == case_num]
@@ -1279,161 +996,102 @@ class FileProcessor:
                         updated_cases += 1
                 prev_stats['Updated Cases'] = updated_cases
             else:
-                prev_stats['Initial Count'] = ''
-                prev_stats['Matching Cases'] = ''
-                prev_stats['New Cases'] = ''
-                prev_stats['Updated Cases'] = ''
+                prev_stats = {'Initial Count': '', 'Matching Cases': '', 'New Cases': '', 'Updated Cases': ''}
 
-            # Format the output data and merge with previous file
-            self.logger.info("\nFormatting output data and merging with previous file...")
+            # ── Step 6 / 10: Format output data ─────────────────────────────
+            self._report_progress(38, "Step 6/10 — Formatting & merging…")
+            self.logger.info("Step 6/10 — Formatting & merging data…")
+            self._check_cancelled()
             output_df = self.format_output_data(df, prev_df)
 
-            # Assign handlers (all cases processed normally)
-            self.logger.info("\nAssigning handlers...")
+            # ── Step 7 / 10: Assign handlers ─────────────────────────────────
+            self._report_progress(48, "Step 7/10 — Assigning handlers…")
+            self.logger.info("Step 7/10 — Assigning handlers…")
+            self._check_cancelled()
             output_df = self.assign_handlers(output_df, selected_handlers, prev_df, prev_file)
-
-            # Calculate fair share distribution AFTER handler assignment (so we can see current workload)
-            self.logger.info("\n=== Calculating Fair Share Distribution (AFTER handler assignment) ===")
             self.fair_share_info = self.calculate_fair_share(output_df, selected_handlers, chat_agent_info)
 
-            # AFTER handler assignment: Identify email duplicates in NEW cases only
-            self.logger.info("\n=== Identifying email duplicates in new cases for Companies sheet ===")
+            # Log per-handler assignment counts
+            if 'Assigned To' in output_df.columns:
+                handler_counts = output_df['Assigned To'].value_counts()
+                for h_name, h_count in handler_counts.items():
+                    if h_name and str(h_name).strip():
+                        self.logger.info(f"  {h_name}: {h_count} cases assigned")
+
+            # Identify email duplicates for Companies sheet
             output_df, self.duplicate_company_cases = self.identify_email_duplicates_new_cases(output_df, prev_df, prev_file)
 
-            # Final cleanup - ensure no completely empty rows
             output_df = self.clean_empty_rows(output_df)
             final_count = len(output_df)
-            self.logger.info(f"\nFinal record count: {final_count}")
 
-            # Process DND Emails Database and update PA Cases
-            self.logger.info("\nProcessing DND Emails Database...")
+            # ── Step 8 / 10: DND emails database ─────────────────────────────
+            self._report_progress(58, "Step 8/10 — Processing DND emails…")
+            self.logger.info("Step 8/10 — Processing DND emails database…")
+            self._check_cancelled()
             output_df = self.process_dnd_emails_database(output_df, prev_file)
 
-            # Prepare a place to collect handler sheet updates from SMS/Email processing
+            # ── Step 9 / 10: SMS & Email replies ─────────────────────────────
+            self._report_progress(65, "Step 9/10 — Processing SMS & Email replies…")
+            self.logger.info("Step 9/10 — Processing SMS & Email replies…")
+            self._check_cancelled()
             updated_handler_sheets = {}
-            # tentative prev file for final (may be replaced if we write updated handler sheets)
             prev_file_for_final = prev_file
 
-            # Process SMS replies if provided
             sms_processing_stats = {}
             if sms_file and os.path.exists(sms_file):
-                self.logger.info(f"\nProcessing SMS replies file: {sms_file}")
                 output_df, sms_processing_stats, updated_handler_sheets = self.process_sms_replies(output_df, sms_file, prev_file)
-                self.logger.info("SMS processing completed")
-                # If handler sheets were updated in-memory, persist them to a temporary prev_file
-                # so FinalProcessor will pick up the updated handler sheets when creating the final workbook.
-                prev_file_for_final = prev_file
+                self.logger.info("SMS replies processed")
                 if updated_handler_sheets:
                     try:
-                        # Create a small excel file containing updated handler sheets + Issue Not Fixed + DND Emails
                         tmp_dir = os.path.dirname(output_file) or os.getcwd()
                         tmp_prev_path = os.path.join(tmp_dir, f"{os.path.splitext(os.path.basename(output_file))[0]}_prev_handlers.xlsx")
-                        
-                        self.logger.info(f"Creating comprehensive temp file with handlers, Issue Not Fixed, and DND Emails: {tmp_prev_path}")
-                        
                         with pd.ExcelWriter(tmp_prev_path, engine='xlsxwriter') as tmp_writer:
-                            # Write handler sheets
                             for sheet_name, sheet_df in updated_handler_sheets.items():
                                 try:
-                                    # Ensure DataFrame has proper columns and is safe to write
                                     if isinstance(sheet_df, pd.DataFrame) and not sheet_df.empty:
                                         sheet_df.to_excel(tmp_writer, sheet_name=sheet_name, index=False)
                                     else:
-                                        # Write empty frame with Case Number header if nothing else
                                         pd.DataFrame(columns=['Case Number']).to_excel(tmp_writer, sheet_name=sheet_name, index=False)
                                 except Exception:
-                                    # Skip problematic sheets
                                     continue
-                            
-                            # ALSO load Issue Not Fixed, DND Emails, and Companies from the ORIGINAL prev_file if it exists
                             if prev_file and os.path.exists(prev_file):
                                 try:
                                     prev_excel = pd.ExcelFile(prev_file)
                                     prev_sheets = prev_excel.sheet_names
-                                    self.logger.info(f"Original prev_file sheets: {prev_sheets}")
-                                    
-                                    # Load and add Issue Not Fixed sheet
-                                    if 'Issue Not Fixed' in prev_sheets:
-                                        try:
-                                            issue_not_fixed_df = pd.read_excel(prev_file, sheet_name='Issue Not Fixed')
-                                            self.logger.info(f"Loading {len(issue_not_fixed_df)} Issue Not Fixed cases from original prev_file")
-                                            issue_not_fixed_df.to_excel(tmp_writer, sheet_name='Issue Not Fixed', index=False)
-                                            self.logger.info(f"✓ Added Issue Not Fixed sheet with {len(issue_not_fixed_df)} cases")
-                                        except Exception as e:
-                                            self.logger.warning(f"Could not load Issue Not Fixed from prev_file: {str(e)}")
-                                    
-                                    # Load and add DND Emails sheet
-                                    if 'DND Emails' in prev_sheets:
-                                        try:
-                                            dnd_emails_df = pd.read_excel(prev_file, sheet_name='DND Emails')
-                                            self.logger.info(f"Loading {len(dnd_emails_df)} DND Emails from original prev_file")
-                                            dnd_emails_df.to_excel(tmp_writer, sheet_name='DND Emails', index=False)
-                                            self.logger.info(f"✓ Added DND Emails sheet with {len(dnd_emails_df)} emails")
-                                        except Exception as e:
-                                            self.logger.warning(f"Could not load DND Emails from prev_file: {str(e)}")
-                                    
-                                    # Load and add Companies sheet (for preservation across runs)
-                                    if 'Companies' in prev_sheets:
-                                        try:
-                                            companies_df = pd.read_excel(prev_file, sheet_name='Companies')
-                                            self.logger.info(f"Loading {len(companies_df)} Companies cases from original prev_file")
-                                            companies_df.to_excel(tmp_writer, sheet_name='Companies', index=False)
-                                            self.logger.info(f"✓ Added Companies sheet with {len(companies_df)} cases")
-                                        except Exception as e:
-                                            self.logger.warning(f"Could not load Companies from prev_file: {str(e)}")
-                                except Exception as e:
-                                    self.logger.warning(f"Could not load Issue Not Fixed/DND Emails/Companies from prev_file: {str(e)}")
-                        
+                                    for extra_sheet in ['Issue Not Fixed', 'DND Emails', 'Companies']:
+                                        if extra_sheet in prev_sheets:
+                                            try:
+                                                extra_df = pd.read_excel(prev_file, sheet_name=extra_sheet)
+                                                extra_df.to_excel(tmp_writer, sheet_name=extra_sheet, index=False)
+                                            except Exception:
+                                                pass
+                                except Exception:
+                                    pass
                         prev_file_for_final = tmp_prev_path
-                        self.logger.info(f" Wrote comprehensive temp file with handlers + Issue Not Fixed + DND Emails: {prev_file_for_final}")
                     except Exception as e:
-                        self.logger.error(f"Could not write temporary prev handler file: {str(e)}")
-                        import traceback
-                        self.logger.error(f"Traceback: {traceback.format_exc()}")
-                else:
-                    prev_file_for_final = prev_file
+                        self.logger.error(f"Could not write temporary prev handler file: {e}")
 
-            # Process Email replies if provided
             email_processing_stats = {}
-            self.logger.info(f"\nEmail file path: {email_file}")
-            if email_file:
-                self.logger.info(f"Email file exists: {os.path.exists(email_file)}")
-                if os.path.exists(email_file):
-                    self.logger.info(f"Processing Email replies file: {email_file}")
-                    # Collect handler sheet updates from email processing as well
-                    output_df, email_processing_stats, email_updated_handler_sheets = self.process_email_replies(output_df, email_file, prev_file)
-                    self.logger.info("Email processing completed")
-                    # Merge any handler sheet updates from email processing into the updated_handler_sheets map
-                    try:
-                        if email_updated_handler_sheets:
-                            if not updated_handler_sheets:
-                                updated_handler_sheets = {}
-                            for k, v in email_updated_handler_sheets.items():
-                                updated_handler_sheets[k] = v
-                    except Exception:
-                        pass
-                else:
-                    self.logger.warning(f"Email file does not exist: {email_file}")
-            else:
-                self.logger.info("No email file provided")
+            if email_file and os.path.exists(email_file):
+                output_df, email_processing_stats, email_updated_handler_sheets = self.process_email_replies(output_df, email_file, prev_file)
+                self.logger.info("Email replies processed")
+                try:
+                    if email_updated_handler_sheets:
+                        updated_handler_sheets.update(email_updated_handler_sheets)
+                except Exception:
+                    pass
+            elif email_file:
+                self.logger.warning(f"Email file not found: {email_file}")
 
             # Extract DND emails from raw file
             raw_dnd_emails = []
             if self.columns['dnd'] in df.columns and self.columns['email'] in df.columns:
                 dnd_mask = df[self.columns['dnd']].astype(str).str.strip().str.lower() == 'yes'
-                dnd_cases = df[dnd_mask]
-                
-                for idx, row in dnd_cases.iterrows():
+                for _, row in df[dnd_mask].iterrows():
                     email = str(row[self.columns['email']]).strip()
                     if email and email.lower() not in ['', 'nan', 'none']:
-                        raw_dnd_emails.append({
-                            'Email': email,
-                            'DND': 'Yes'
-                        })
-                
-                self.logger.info(f"Found {len(raw_dnd_emails)} DND emails from raw file")
+                        raw_dnd_emails.append({'Email': email, 'DND': 'Yes'})
 
-            # Prepare processing statistics for final processor
             processing_stats = {
                 'Initial Count': initial_count,
                 'After Work Order Status': wo_status_count,
@@ -1453,16 +1111,9 @@ class FileProcessor:
                 'Bank/Sutherland Updated Cases': getattr(self, 'bank_sutherland_updated_cases', []),
                 'DND Updated Cases': getattr(self, 'dnd_updated_cases', [])
             }
-            
-            # Log processing summary
-            self.logger.info(f"Processing complete: {initial_count} → {final_count} records ({initial_count - final_count} removed)")
-            
-            # ===== MANDATORY: CONVERT ALL "in progress today" → "in_progress" FIRST =====
-            # RULE: This MUST happen before ANY Chat Agent distribution logic
-            # RULE: Check ALL columns for any "in progress today" values and convert them
-            self.logger.info("\n" + "="*70)
-            self.logger.info("MANDATORY: CONVERTING ALL 'in progress today' → 'in_progress'")
-            self.logger.info("="*70)
+            self.logger.info(f"Processing complete: {initial_count} → {final_count} records")
+
+            # Convert 'in progress today' → 'in_progress' before Chat Agent step
             total_converted = 0
             status_cols = [col for col in output_df.columns if 'status' in col.lower()]
             for status_col in status_cols:
@@ -1471,43 +1122,50 @@ class FileProcessor:
                     conv_count = mask.sum()
                     if conv_count > 0:
                         output_df.loc[mask, status_col] = 'in_progress'
-                        self.logger.info(f"  {status_col}: Converted {conv_count} cases")
                         total_converted += conv_count
-            if total_converted > 0:
-                self.logger.info(f"✓ TOTAL CONVERTED: {total_converted} cases from 'in progress today' to 'in_progress'")
-            else:
-                self.logger.info("✓ No 'in progress today' cases found")
-            
-            # ===== CHAT AGENT FINAL STEP (LAST STEP BEFORE FINAL PROCESSOR) =====
-            # This runs AFTER all processing is complete and everything is settled
+            if total_converted:
+                self.logger.info(f"Converted {total_converted} 'in progress today' → 'in_progress'")
+
+            # Chat Agent initial load
             chat_agent_sheet_df = pd.DataFrame()
             if chat_agent_info and chat_agent_info.get('enabled'):
-                self.logger.info("\n" + "="*70)
-                self.logger.info("EXECUTING CHAT AGENT FINAL STEP (after all other processing)")
-                self.logger.info("="*70)
+                self._report_progress(72, "Step 9b/10 — Chat Agent assignment…")
+                self.logger.info("Step 9b/10 — Chat Agent assignment…")
+                self._check_cancelled()
                 output_df, chat_agent_sheet_df = self.process_chat_agent_final_step(
-                    output_df, 
-                    output_file, 
-                    selected_handlers, 
-                    chat_agent_info, 
+                    output_df,
+                    output_file,
+                    selected_handlers,
+                    chat_agent_info,
                     prev_for_final if 'prev_for_final' in locals() else prev_file
                 )
                 if not chat_agent_sheet_df.empty:
-                    self.logger.info(f"✓ Chat Agent sheet created with {len(chat_agent_sheet_df)} cases")
-                else:
-                    self.logger.info("Chat Agent final step completed (no cases to pull or sheet created)")
-            
-            # Use final processor for additional sheets and validations
+                    self.logger.info(f"Chat Agent: {len(chat_agent_sheet_df)} cases assigned")
+
+            # Off-queue redistribution
+            self._report_progress(78, "Step 9c/10 — Off-queue redistribution…")
+            self.logger.info("Step 9c/10 — Off-queue redistribution…")
+            self._check_cancelled()
+            output_df = self.redistribute_off_queue_handler_cases(output_df, selected_handlers, chat_agent_info)
+
+            # In-progress rebalancer
+            self._report_progress(84, "Step 9d/10 — Rebalancing in-progress cases…")
+            self.logger.info("Step 9d/10 — Rebalancing in-progress cases…")
+            self._check_cancelled()
+            output_df = self.rebalance_in_progress_cases(output_df, selected_handlers, chat_agent_info)
+
+            # ── Step 10 / 10: Final output ────────────────────────────────────
+            self._report_progress(90, "Step 10/10 — Writing output file…")
+            self.logger.info("Step 10/10 — Writing output & generating sheets…")
+            self._check_cancelled()
             try:
                 final_processor = FinalProcessor()
-                
-                # Validate output data before final processing
                 validation_results, critical_issues = final_processor.validate_output_data(output_df)
-                
                 if critical_issues:
-                    self.logger.warning("Critical issues found during validation:")
-                    for issue in critical_issues:
-                        self.logger.warning(f"  - {issue}")
+                    self.logger.warning("Validation results: " + "; ".join(critical_issues))
+                    self.logger.warning("Critical validation issues found — check output carefully")
+                else:
+                    self.logger.info("Validation results: all checks passed ✓")
                 
                 # Process final output with additional sheets
                 # Use prev_file_for_final if we created one with updated handler sheets
@@ -1529,30 +1187,25 @@ class FileProcessor:
                     chat_agent_sheet_df=chat_agent_sheet_df,
                     protect_companies=protect_companies
                 )
-                
                 if not success:
                     raise Exception(f"Final processing failed: {message}")
+                else:
+                    self.logger.info(f"Final processing completed. File saved to: {output_file}")
             except ImportError as e:
-                self.logger.error(f"Error importing FinalProcessor: {str(e)}")
-                # Fallback: save basic output without additional sheets
+                self.logger.error(f"Error importing FinalProcessor: {e}")
                 output_df.to_excel(output_file, index=False)
-                self.logger.warning("Saved basic output without additional sheets due to import error")
             except Exception as e:
-                self.logger.error(f"Error in final processing: {str(e)}")
-                # Fallback: save basic output
+                self.logger.error(f"Error in final processing: {e}")
                 output_df.to_excel(output_file, index=False)
-                self.logger.warning("Saved basic output due to final processing error")
-            
-            # Verify Chat Agent persistence if enabled
-            if chat_agent_info and chat_agent_info.get('enabled'):
-                persistence_info = self.verify_chat_agent_persistence(output_df, chat_agent_info, prev_file)
-                self.logger.info(f"Chat Agent persistence info: {persistence_info}")
-            
+
+            self._report_progress(100, "Done ✓")
             return True, f"Processing completed successfully. Final record count: {final_count}"
-            
+
+        except InterruptedError:
+            self.logger.info("Processing cancelled by user")
+            return False, "Processing was cancelled"
         except Exception as e:
-            self.logger.error(f"File processing error: {str(e)}")
-            self.logger.error("Stack trace:", exc_info=True)
+            self.logger.error(f"File processing error: {e}", exc_info=True)
             return False, f"Error during file processing: {str(e)}"
     
     def load_previous_file(self, prev_file):
@@ -3298,18 +2951,9 @@ class FileProcessor:
             
             # STEP 1: Identify all status columns and determine what 'in_progress' looks like
             status_cols = [col for col in df.columns if 'status' in col.lower()]
-            self.logger.info(f"\nStatus columns identified: {status_cols}")
-            
             if not status_cols or 'Assigned To' not in df.columns:
                 self.logger.warning("Missing status columns or 'Assigned To' column - cannot redistribute")
                 return df
-            
-            # Show sample status values for debugging
-            all_status_values = set()
-            for col in status_cols:
-                unique_vals = df[col].dropna().unique()[:10]
-                all_status_values.update([str(v).lower() for v in unique_vals])
-            self.logger.info(f"Sample status values found: {all_status_values}")
             
             # STEP 2: Count current Chat Agent in_progress cases
             current_chat_in_progress = 0
@@ -3964,33 +3608,11 @@ class FileProcessor:
         Ensures critical fields (Email, Country, State/Province, etc.) are populated for new cases.
         """
         try:
-            self.logger.info("\nMerging with previous file data...")
-            
-            # IMPORTANT: Convert Completion Date Timestamps to strings early
+            self.logger.info("Merging with previous file data…")
+
+            # Convert Completion Date Timestamps to strings early
             if 'Completion Date' in new_df.columns:
-                self.logger.info("Converting Completion Date Timestamps in new_df to strings...")
-                
-                # DIAGNOSTIC: Log BEFORE conversion
-                completion_date_dtype = new_df['Completion Date'].dtype
-                non_empty_before = (new_df['Completion Date'].fillna('').astype(str).str.strip() != '').sum()
-                self.logger.info(f"DIAGNOSTIC: Before conversion - dtype={completion_date_dtype}, non-empty={non_empty_before}/{len(new_df)}")
-                samples_before = new_df['Completion Date'].head(3).tolist()
-                self.logger.info(f"DIAGNOSTIC: Sample values before: {samples_before}")
-                
-                # Do the conversion
                 new_df['Completion Date'] = new_df['Completion Date'].astype(str)
-                self.logger.info("Completion Date in new_df converted to string format")
-                
-                # DIAGNOSTIC: Log AFTER conversion
-                completion_date_dtype = new_df['Completion Date'].dtype
-                non_empty_count = (new_df['Completion Date'].fillna('').astype(str).str.strip() != '').sum()
-                self.logger.info(f"DIAGNOSTIC: After conversion - dtype={completion_date_dtype}, non-empty={non_empty_count}/{len(new_df)}")
-                if non_empty_count > 0:
-                    samples = new_df[new_df['Completion Date'].fillna('').astype(str).str.strip() != '']['Completion Date'].head(3).tolist()
-                    self.logger.info(f"DIAGNOSTIC: Sample values after (non-empty): {samples}")
-                else:
-                    samples_after = new_df['Completion Date'].head(3).tolist()
-                    self.logger.info(f"DIAGNOSTIC: Sample values after (ALL): {samples_after}")
             
             if prev_df is None or prev_df.empty:
                 self.logger.info("No previous file data to merge - using only new data")
@@ -4033,14 +3655,7 @@ class FileProcessor:
             
             # 1. Add NEW cases first (these are cases that don't exist in previous file)
             new_cases_df = new_df[new_df['Case Number'].isin(new_cases)]
-            
-            # DIAGNOSTIC: Log Completion Date state in new_cases_df
-            if 'Completion Date' in new_cases_df.columns:
-                non_empty_count = (new_cases_df['Completion Date'].fillna('').astype(str).str.strip() != '').sum()
-                self.logger.info(f"DIAGNOSTIC: new_cases_df has {non_empty_count}/{len(new_cases_df)} non-empty Completion Date values")
-                if non_empty_count == 0:
-                    self.logger.error(f"CRITICAL: All Completion Date values were lost when extracting new_cases_df!")
-            
+
             if not new_cases_df.empty:
                 # Handle special fields for new cases
                 for field, variants in self.canonical_fields.items():
@@ -4571,57 +4186,8 @@ class FileProcessor:
                     non_empty_count = (output_df[target_col] != '').sum()
                     self.logger.info(f"Mapped {found_col} -> {target_col}: {non_empty_count} non-empty values")
                     
-                    # Special handling for DND and Problem Description in new cases
-                    if target_col in ['DND (Do Not Disturb)', 'Problem Description']:
-                        # Only update if we actually have data from raw input
-                        raw_values = df[found_col].fillna('').astype(str).str.strip()
-                        non_empty_raw = raw_values[raw_values != '']
-                        if not non_empty_raw.empty:
-                            # Log for each case that gets data from raw
-                            for idx, val in non_empty_raw.items():
-                                case_num = df.at[idx, 'Case Number']
-                                if pd.notna(case_num):
-                                    self.logger.debug(f"Set {target_col} for case {case_num} from raw input: '{val}'")
-                    
-                    # Add debug logging for merged fields
-                    if found_col != target_col:  # Only log when a secondary name was used
-                        sample_data = output_df[output_df[target_col] != '']
-                        if not sample_data.empty:
-                            sample_cases = sample_data['Case Number'].head(3).tolist()
-                            self.logger.debug(f"Merged '{found_col}' into '{target_col}' for cases: {sample_cases}")
-                    
-                    # Add debug logging for merged fields
-                    if found_col != target_col:  # Only log when a secondary name was used
-                        sample_data = output_df[output_df[target_col] != '']
-                        if not sample_data.empty:
-                            sample_cases = sample_data['Case Number'].head(3).tolist()
-                            self.logger.debug(f"Merged '{found_col}' into '{target_col}' for cases: {sample_cases}")
-                    
-                    # Special debugging for Incoming Channel
-                    if target_col == 'Incoming Channel':
-                        sample_values = output_df[target_col].head(5).tolist()
-                        self.logger.info(f"Incoming Channel sample values: {sample_values}")
-                    
-                    # Special debugging for State/Province
-                    if target_col == 'State/Province':
-                        sample_values = output_df[target_col].head(5).tolist()
-                        self.logger.info(f"State/Province sample values: {sample_values}")
-                        # Additional debugging for State/Province
-                        non_empty_count = (output_df[target_col].astype(str).str.strip() != '').sum()
-                        self.logger.info(f"State/Province non-empty count: {non_empty_count} out of {len(output_df)}")
-                        if non_empty_count > 0:
-                            non_empty_values = output_df[target_col][output_df[target_col].astype(str).str.strip() != ''].head(10).tolist()
-                            self.logger.info(f"State/Province non-empty values: {non_empty_values}")
                 else:
                     self.logger.warning(f"None of the source columns {source_cols} found in input data")
-                    # Special debugging for State/Province source column
-                    if target_col == 'State/Province':
-                        self.logger.error(f"State/Province source columns {source_cols} not found in input data")
-                        self.logger.info(f"Available columns in input data: {df.columns.tolist()}")
-                        # Check for similar column names
-                        similar_cols = [col for col in df.columns if 'state' in col.lower() or 'province' in col.lower()]
-                        if similar_cols:
-                            self.logger.info(f"Found similar columns: {similar_cols}")
             
             # Add Local Time column (empty for later processing)
             output_df['Local Time'] = ''
@@ -4664,30 +4230,10 @@ class FileProcessor:
             # Ensure all columns are strings and empty values are handled
             for col in output_df.columns:
                 output_df[col] = output_df[col].fillna('').astype(str)
-            
-            # Debug: Show sample of formatted data
-            self.logger.info(f"\nSample of formatted data (first 3 rows):")
-            try:
-                for idx, row in output_df.head(3).iterrows():
-                    case_num = row.get('Case Number', 'N/A')
-                    Customer_name = row.get(' Contact Name (Contact) (Contact)', 'N/A')
-                    company = row.get('Company Name', 'N/A')
-                    self.logger.info(f"Row {idx}: Case={case_num}, Contact={Customer_name}, Company={company}")
-            except Exception as e:
-                self.logger.warning(f"Error showing sample data: {str(e)}")
 
             # Add the previous data if available
             prev_case_numbers = set()
             if prev_df is not None and not prev_df.empty:
-                # DIAGNOSTIC: Check Completion Date in output_df before filtering
-                if 'Completion Date' in output_df.columns:
-                    completion_date_non_empty = (output_df['Completion Date'].fillna('').astype(str).str.strip() != '').sum()
-                    self.logger.info(f"DIAGNOSTIC format_output_data: Before filtering - Completion Date has {completion_date_non_empty}/{len(output_df)} non-empty values")
-                    if completion_date_non_empty == 0:
-                        self.logger.error(f"CRITICAL: Completion Date is empty in output_df BEFORE merge_with_previous!")
-                else:
-                    self.logger.error(f"CRITICAL: Completion Date column not in output_df at all!")
-                
                 for col in desired_columns:
                     if col not in prev_df.columns:
                         prev_df[col] = ''
@@ -4782,7 +4328,7 @@ class FileProcessor:
             
             # Final verification of DND values
             if 'DND (Do Not Disturb)' in merged_df.columns:
-                new_cases_no_dnd = merged_df[new_cases_mask & (merged_df['DND (Do Not Disturb)'].fillna('').astype(str).str.strip() == '')]
+                new_cases_no_dnd = merged_df[new_cases_mask & (merged_df['DND (Do Not Disturb)'].astype(str).str.strip() == '')]
                 if not new_cases_no_dnd.empty:
                     self.logger.warning(f"Found {len(new_cases_no_dnd)} new cases still missing DND value after setting defaults")
                     for _, row in new_cases_no_dnd.head(5).iterrows():
@@ -4827,88 +4373,21 @@ class FileProcessor:
                     else:
                         break  # Stop counting when we hit the first previous case
                 
-                self.logger.info(f"New cases at the top: {new_cases_at_top}")
-                
-                # Verify that new cases are actually at the top
-                if new_cases_at_top > 0:
-                    first_new_case = merged_df.iloc[0]['Case Number']
-                    if first_new_case not in prev_case_numbers:
-                        self.logger.info(f"SUCCESS: First case is NEW: {first_new_case}")
-                    else:
-                        self.logger.error(f"❌ ERROR: First case is NOT new: {first_new_case}")
-                    
-                    # Show the first few cases to verify order
-                    first_10_cases = merged_df.head(10)['Case Number'].tolist()
-                    self.logger.info(f"First 10 cases in final output: {first_10_cases}")
-                    
-                    # Count new vs previous cases in first 10
-                    new_in_first_10 = sum(1 for case in first_10_cases if case not in prev_case_numbers)
-                    prev_in_first_10 = sum(1 for case in first_10_cases if case in prev_case_numbers)
-                    self.logger.info(f"First 10 breakdown: {new_in_first_10} new, {prev_in_first_10} previous")
-                else:
-                    self.logger.warning("⚠ WARNING: No new cases found at the top of the output")
+                if new_cases_at_top == 0:
+                    self.logger.warning("No new cases found at the top of the output")
             
-            # Verify the output
-            self.logger.info(f"\nOutput DataFrame created with {len(merged_df)} rows")
-            self.logger.info(f"Columns in order: {merged_df.columns.tolist()}")
-            
-            # Debug: Check if State/Province column exists in final output
-            if 'State/Province' in merged_df.columns:
-                self.logger.info(f"State/Province column found at position {merged_df.columns.get_loc('State/Province') + 1}")
-                state_count = (merged_df['State/Province'].astype(str).str.strip() != '').sum()
-                self.logger.info(f"State/Province non-empty count in final output: {state_count} out of {len(merged_df)}")
-            else:
-                self.logger.error("CRITICAL ERROR: State/Province column is missing from final output!")
-                self.logger.error(f"Available columns: {merged_df.columns.tolist()}")
-            
-                # CRITICAL FINAL VERIFICATION: Ensure State/Province column is present and has data
-                state_province_col = 'State/Province (Case) (Case)'  # Use full column name
-                if state_province_col in merged_df.columns:
-                    final_state_count = (merged_df[state_province_col].astype(str).str.strip() != '').sum()
-                    self.logger.info(f"Final State/Province non-empty count: {final_state_count} out of {len(merged_df)}")
-                    if final_state_count > 0:
-                        final_states = merged_df[state_province_col][merged_df[state_province_col].astype(str).str.strip() != ''].head(10).tolist()
-                        self.logger.info(f"Final State/Province sample values: {final_states}")
-                    else:
-                        self.logger.warning("WARNING: No State/Province data found in final output!")
-                else:
-                    self.logger.error("CRITICAL ERROR: State/Province column missing from final output!")
-                    # Emergency fix: add State/Province column after Country/Region
-                    country_col = 'Country/Region (Contact) (Contact)'  # Use full column name
-                    try:
-                        # First try to add after Country/Region
-                        merged_df.insert(merged_df.columns.get_loc(country_col) + 1, state_province_col, '')
-                        self.logger.info("Emergency fix: Added State/Province column after Country/Region")
-                    except (KeyError, ValueError):
-                        # If Country/Region not found, add as third column (after Work Order Type)
-                        merged_df.insert(2, state_province_col, '')
-                        self.logger.info("Emergency fix: Added State/Province column as third column")
-                
-            # Filter to only include expected output columns (remove unwanted columns like "Unnamed: 18", "Contact Name", etc.)
-            self.logger.info(f"\n=== FILTERING FINAL OUTPUT COLUMNS ===")
-            self.logger.info(f"Before filtering: {len(merged_df.columns)} columns")
-            self.logger.info(f"Columns before filtering: {merged_df.columns.tolist()}")
-            
+            self.logger.info(f"Output: {len(merged_df)} rows, {len(merged_df.columns)} columns")
+
+            # Ensure State/Province column exists
+            if 'State/Province' not in merged_df.columns:
+                self.logger.error("State/Province column missing from final output")
+
+            # Filter to expected output columns only
             final_columns = list(self.output_columns)
             if '_Source_Sheet' in merged_df.columns:
                 final_columns.append('_Source_Sheet')
-            
-            # Get only columns that exist in merged_df
             available_final_columns = [col for col in final_columns if col in merged_df.columns]
-            
-            # Filter merged_df to only include these columns (in the correct order)
             merged_df = merged_df[available_final_columns]
-            
-            self.logger.info(f"After filtering: {len(merged_df.columns)} columns")
-            self.logger.info(f"Final output columns: {merged_df.columns.tolist()}")
-            
-            # Check for any unwanted columns that might have sneaked in
-            unwanted_columns = [col for col in merged_df.columns if col not in final_columns and col != '_Source_Sheet']
-            if unwanted_columns:
-                self.logger.warning(f"WARNING: Found unwanted columns in final output: {unwanted_columns}")
-                # Remove them
-                merged_df = merged_df[[col for col in merged_df.columns if col in final_columns or col == '_Source_Sheet']]
-                self.logger.info(f"Removed unwanted columns. Final count: {len(merged_df.columns)}")
             
             return merged_df
         except Exception as e:
@@ -4940,22 +4419,11 @@ class FileProcessor:
             # Store the updated cases for summary tracking
             if mask.sum() > 0:
                 updated_cases = df[mask].copy()
-                # Add to processing stats for summary
                 if not hasattr(self, 'dnd_updated_cases'):
                     self.dnd_updated_cases = []
-                
                 for idx, row in updated_cases.iterrows():
                     case_number = str(row['Case Number']).strip()
-                    self.dnd_updated_cases.append({
-                        'case_number': case_number,
-                        'source': 'DND rule'
-                    })
-                
-                # Debug logging for DND tracking
-                self.logger.info(f"DND Debug - Updated {len(updated_cases)} cases")
-                self.logger.info(f"DND Debug - Tracking {len(self.dnd_updated_cases)} total cases")
-                for case in self.dnd_updated_cases[-len(updated_cases):]:  # Show the latest ones
-                    self.logger.info(f"DND Debug - Case: {case['case_number']}, Source: {case['source']}")
+                    self.dnd_updated_cases.append({'case_number': case_number, 'source': 'DND rule'})
             
             for action_col in ['Action 1', 'Action 2', 'Action 3', 'Final Action']:
                 if action_col in df.columns:
@@ -5213,6 +4681,406 @@ class FileProcessor:
 
 
 
+    # =========================================================================
+    # OFF-QUEUE REDISTRIBUTION
+    # =========================================================================
+    def redistribute_off_queue_handler_cases(self, df, selected_handlers, chat_agent_info=None):
+        """Redistribute in_progress cases from OFF-Queue handlers to ON-Queue handlers.
+
+        Rules
+        -----
+        - OFF-Queue handler  = has cases in df["Assigned To"] but is NOT in selected_handlers
+          (and is not Chat Agent).
+        - ALL in_progress cases of an OFF-Queue handler are moved to ON-Queue handlers.
+          (By the time this runs every "in progress today" has already been converted to
+           "in_progress", so only status == "in_progress" matters.)
+        - closed / skipped / new cases remain with the OFF-Queue handler on their sheet.
+        - Company grouping is sacred: all cases belonging to the same company that are
+          currently assigned to the OFF-Queue handler go to ONE target handler (not split).
+        - Cases without a company are distributed one-by-one in round-robin order.
+        - Chat Agent (if enabled) is a valid target; it receives company groups as well,
+          so that the subsequent rebalance_in_progress_cases() can then fix the exact counts.
+        - Distribution strategy: round-robin over ON-Queue handlers (including Chat Agent
+          if enabled), sorted by current in_progress workload ascending (least-loaded first),
+          so the initial redistribution is already roughly balanced.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            The main output dataframe (after Chat Agent first-load step).
+        selected_handlers : list[str]
+            Handlers currently ON Queue (checked in the UI).
+        chat_agent_info : dict or None
+            Chat Agent configuration.  If enabled, the supporter name is also
+            a valid redistribution target.
+
+        Returns
+        -------
+        pd.DataFrame
+            Updated df where every in_progress case of an OFF-Queue handler
+            has been reassigned to an ON-Queue handler.
+        """
+        import math
+        try:
+            self.logger.info("\n" + "=" * 70)
+            self.logger.info("OFF-QUEUE REDISTRIBUTION: Redistributing in_progress cases from OFF-Queue handlers")
+            self.logger.info("=" * 70)
+
+            if 'Assigned To' not in df.columns or 'Status' not in df.columns:
+                self.logger.warning("  'Assigned To' or 'Status' column missing – skipping off-queue redistribution")
+                return df
+
+            # ── Build the full set of ON-Queue recipients ─────────────────────
+            cleaned_selected = [self.clean_handler_name(h) for h in selected_handlers if self.clean_handler_name(h)]
+
+            # Chat Agent supporter name (valid target when enabled)
+            chat_agent_name = None
+            if chat_agent_info and chat_agent_info.get('enabled'):
+                chat_agent_name = chat_agent_info.get('supporter_name', 'Chat Agent')
+
+            # All valid redistribution targets = selected handlers + chat agent if enabled
+            all_targets = list(cleaned_selected)
+            if chat_agent_name and chat_agent_name not in all_targets:
+                all_targets.append(chat_agent_name)
+
+            if not all_targets:
+                self.logger.warning("  No ON-Queue targets available – skipping off-queue redistribution")
+                return df
+
+            selected_set = set(cleaned_selected)
+            if chat_agent_name:
+                selected_set.add(chat_agent_name)
+
+            # ── Identify OFF-Queue handlers that have in_progress cases ────────
+            # Everyone in "Assigned To" that is NOT in selected_set and NOT chat agent sheet owner
+            all_assigned = df['Assigned To'].dropna().unique()
+            off_queue_handlers = [
+                h for h in all_assigned
+                if str(h).strip() and self.clean_handler_name(str(h)) not in selected_set
+            ]
+
+            if not off_queue_handlers:
+                self.logger.info("  No OFF-Queue handlers with cases found – nothing to redistribute")
+                return df
+
+            self.logger.info(f"  OFF-Queue handlers detected: {off_queue_handlers}")
+            self.logger.info(f"  ON-Queue targets: {all_targets}")
+
+            # ── Gather company column once ─────────────────────────────────────
+            company_col = self._get_company_column(df)
+
+            # ── Helper: current in_progress count per target (for sort/round-robin) ──
+            def ip_count(handler):
+                h_rows = df[df['Assigned To'] == handler]
+                return (
+                    h_rows['Status'].astype(str).str.strip().str.lower()
+                    .str.replace(r'[\s_]+', '_', regex=True) == 'in_progress'
+                ).sum()
+
+            total_redistributed = 0
+
+            for off_handler in off_queue_handlers:
+                # All in_progress rows for this OFF-Queue handler
+                ip_mask = (
+                    (df['Assigned To'] == off_handler) &
+                    (df['Status'].astype(str).str.strip().str.lower()
+                     .str.replace(r'[\s_]+', '_', regex=True) == 'in_progress')
+                )
+                ip_indices = df[ip_mask].index.tolist()
+
+                if not ip_indices:
+                    self.logger.info(f"  {off_handler}: no in_progress cases – skipping")
+                    continue
+
+                self.logger.info(f"\n  Processing OFF-Queue handler: {off_handler} ({len(ip_indices)} in_progress cases)")
+
+                # ── Group in_progress cases by company ────────────────────────
+                # company → list of df-indices
+                company_groups: dict = {}   # company_key (str) → [indices]
+                no_company_indices: list = []
+
+                for idx in ip_indices:
+                    if company_col and company_col in df.columns:
+                        raw_company = str(df.at[idx, company_col]).strip()
+                        company_key = raw_company.lower()
+                    else:
+                        raw_company = ''
+                        company_key = ''
+
+                    if company_key in ('', 'nan', 'none'):
+                        no_company_indices.append(idx)
+                    else:
+                        if company_key not in company_groups:
+                            company_groups[company_key] = []
+                        company_groups[company_key].append(idx)
+
+                # Sort targets by current in_progress workload (least-loaded first)
+                # so the very first redistribution is as balanced as possible
+                sorted_targets = sorted(all_targets, key=ip_count)
+                target_cycle_idx = 0   # round-robin pointer
+
+                def next_target():
+                    nonlocal target_cycle_idx
+                    # Re-sort each time to keep picking the least-loaded
+                    t = sorted(all_targets, key=ip_count)
+                    return t[0]  # always pick current least-loaded
+
+                # ── Distribute company groups (whole group → one target) ───────
+                # Sort groups by size descending (biggest first for better balance)
+                sorted_groups = sorted(company_groups.items(), key=lambda x: len(x[1]), reverse=True)
+
+                for company_key, group_indices in sorted_groups:
+                    target = next_target()
+                    for idx in group_indices:
+                        df.at[idx, 'Assigned To'] = target
+                    self.logger.info(
+                        f"    Company '{company_key}' ({len(group_indices)} cases) → {target}"
+                    )
+                    total_redistributed += len(group_indices)
+
+                # ── Distribute no-company cases one-by-one ────────────────────
+                for idx in no_company_indices:
+                    target = next_target()
+                    case_num = df.at[idx, 'Case Number'] if 'Case Number' in df.columns else '?'
+                    df.at[idx, 'Assigned To'] = target
+                    self.logger.info(f"    No-company case {case_num} → {target}")
+                    total_redistributed += 1
+
+                # Workload after this OFF-Queue handler
+                workload_after = {t: ip_count(t) for t in all_targets}
+                self.logger.info(f"  Workload after redistributing {off_handler}: {workload_after}")
+
+            self.logger.info(f"\n✓ OFF-QUEUE REDISTRIBUTION COMPLETE: {total_redistributed} in_progress cases redistributed")
+            final_workload = {t: ip_count(t) for t in all_targets}
+            self.logger.info(f"  Final in_progress distribution: {final_workload}")
+            return df
+
+        except Exception as e:
+            self.logger.error(f"Error in redistribute_off_queue_handler_cases: {str(e)}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return df
+
+    # =========================================================================
+    # IN-PROGRESS AUTO-REBALANCER
+    # =========================================================================
+    def rebalance_in_progress_cases(self, df, selected_handlers, chat_agent_info=None):
+        """Automatically rebalance in_progress cases fairly across all ON-Queue handlers.
+
+        After off-queue redistribution (and Chat Agent first-load) some handlers may
+        still end up with significantly more in_progress cases than others.  This method
+        re-equalises the load by moving excess in_progress cases from over-loaded handlers
+        to under-loaded handlers.
+
+        Rules
+        -----
+        - Only in_progress cases are ever moved.  new / closed / skipped are untouched.
+        - Company grouping is respected: when moving a case that belongs to a company,
+          the entire company group currently on that handler moves together.
+        - Chat Agent target = ceil(fair_share × 1.15).
+        - Regular handler target = round(fair_share).
+        - fair_share = total_in_progress / (len(selected_handlers) + (1 if chat_agent else 0))
+        - After rebalancing the handler-to-handler difference should be ≤ 1 case.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+        selected_handlers : list[str]
+        chat_agent_info : dict or None
+
+        Returns
+        -------
+        pd.DataFrame
+        """
+        import math
+        try:
+            self.logger.info("\n" + "=" * 70)
+            self.logger.info("IN-PROGRESS REBALANCER: Auto-equalising in_progress load across ON-Queue handlers")
+            self.logger.info("=" * 70)
+
+            if 'Assigned To' not in df.columns or 'Status' not in df.columns:
+                self.logger.warning("  Missing columns – skipping rebalancer")
+                return df
+
+            cleaned_selected = [self.clean_handler_name(h) for h in selected_handlers if self.clean_handler_name(h)]
+
+            chat_agent_name = None
+            if chat_agent_info and chat_agent_info.get('enabled'):
+                chat_agent_name = chat_agent_info.get('supporter_name', 'Chat Agent')
+
+            # All active participants
+            all_active = list(cleaned_selected)
+            if chat_agent_name and chat_agent_name not in all_active:
+                all_active.append(chat_agent_name)
+
+            if not all_active:
+                self.logger.warning("  No active handlers – skipping rebalancer")
+                return df
+
+            company_col = self._get_company_column(df)
+
+            # ── Helper: in_progress indices for a handler ──────────────────────
+            def get_ip_indices(handler):
+                rows = df[df['Assigned To'] == handler]
+                mask = (
+                    rows['Status'].astype(str).str.strip().str.lower()
+                    .str.replace(r'[\s_]+', '_', regex=True) == 'in_progress'
+                )
+                return rows[mask].index.tolist()
+
+            # ── Calculate targets ──────────────────────────────────────────────
+            total_ip = sum(len(get_ip_indices(h)) for h in all_active)
+            num_participants = len(all_active)
+
+            if total_ip == 0:
+                self.logger.info("  No in_progress cases to rebalance")
+                return df
+
+            # Include Chat Agent as a full participant in the divisor
+            fair_share = total_ip / num_participants
+
+            # Per-handler targets
+            target_map: dict = {}
+            for h in all_active:
+                if h == chat_agent_name:
+                    target_map[h] = math.ceil(fair_share * 1.15)
+                else:
+                    target_map[h] = round(fair_share)
+
+            self.logger.info(f"  Total in_progress: {total_ip}  |  Participants: {num_participants}  |  Fair share: {fair_share:.1f}")
+            self.logger.info(f"  Targets: { {h: target_map[h] for h in all_active} }")
+
+            # Log current distribution
+            current_counts = {h: len(get_ip_indices(h)) for h in all_active}
+            self.logger.info(f"  Current counts: {current_counts}")
+
+            # ── Build company→current-handler map for grouping awareness ──────
+            # company_key → handler (if all same-company in_progress cases are on the same handler)
+            def company_key_for(idx):
+                if company_col and company_col in df.columns:
+                    raw = str(df.at[idx, company_col]).strip().lower()
+                    return raw if raw not in ('', 'nan', 'none') else None
+                return None
+
+            # ── Iterative rebalancing pass ─────────────────────────────────────
+            max_passes = 20   # safety cap
+            total_moved = 0
+
+            for _pass in range(max_passes):
+                moved_this_pass = 0
+
+                # Identify over-loaded and under-loaded handlers each pass
+                over_handlers = sorted(
+                    [h for h in all_active if len(get_ip_indices(h)) > target_map[h]],
+                    key=lambda h: len(get_ip_indices(h)) - target_map[h],
+                    reverse=True
+                )
+                under_handlers = sorted(
+                    [h for h in all_active if len(get_ip_indices(h)) < target_map[h]],
+                    key=lambda h: target_map[h] - len(get_ip_indices(h)),
+                    reverse=True
+                )
+
+                if not over_handlers or not under_handlers:
+                    break  # balanced
+
+                for over_h in over_handlers:
+                    if not under_handlers:
+                        break
+
+                    ip_indices = get_ip_indices(over_h)
+                    current_count = len(ip_indices)
+                    excess = current_count - target_map[over_h]
+                    if excess <= 0:
+                        continue
+
+                    # Build company groups for this handler's in_progress cases
+                    # company_key → [indices]  (None key = no company)
+                    cg: dict = {}
+                    for idx in ip_indices:
+                        ck = company_key_for(idx)
+                        if ck not in cg:
+                            cg[ck] = []
+                        cg[ck].append(idx)
+
+                    # Sort groups: None (no-company) first as single cases, then by size asc
+                    # so we move the smallest chunks to minimise over-moving
+                    no_co = cg.pop(None, [])
+                    # Each no-company case is its own moveable unit
+                    moveable_units = [[idx] for idx in no_co]
+                    # Company groups – sorted smallest first
+                    moveable_units += sorted(cg.values(), key=len)
+
+                    for unit in moveable_units:
+                        if excess <= 0:
+                            break
+                        if not under_handlers:
+                            break
+
+                        # Pick the most under-loaded target
+                        target_h = max(
+                            under_handlers,
+                            key=lambda h: target_map[h] - len(get_ip_indices(h))
+                        )
+
+                        unit_size = len(unit)
+                        # Only move if it doesn't push target over its own ceiling
+                        target_after = len(get_ip_indices(target_h)) + unit_size
+                        if target_after > target_map[target_h] + 1:
+                            # Too big a chunk; try splitting (only for no-company cases)
+                            if unit_size == 1:
+                                # Single case: move it anyway if target is still under
+                                if len(get_ip_indices(target_h)) < target_map[target_h]:
+                                    pass  # proceed
+                                else:
+                                    continue
+                            else:
+                                continue  # skip company group – don't split
+
+                        # Move
+                        for idx in unit:
+                            case_num = df.at[idx, 'Case Number'] if 'Case Number' in df.columns else '?'
+                            ck_label = company_key_for(idx) or '(no company)'
+                            df.at[idx, 'Assigned To'] = target_h
+                            self.logger.debug(f"    Moved case {case_num} [{ck_label}] {over_h} → {target_h}")
+
+                        excess -= unit_size
+                        moved_this_pass += unit_size
+                        total_moved += unit_size
+
+                        # Remove target from under_handlers if it reached its target
+                        if len(get_ip_indices(target_h)) >= target_map[target_h]:
+                            under_handlers = [h for h in under_handlers if h != target_h]
+
+                if moved_this_pass == 0:
+                    break   # no progress; stop
+
+            # ── Final report ───────────────────────────────────────────────────
+            final_counts = {h: len(get_ip_indices(h)) for h in all_active}
+            self.logger.info(f"\n✓ REBALANCER COMPLETE: {total_moved} in_progress cases moved across {_pass + 1} pass(es)")
+            self.logger.info(f"  Final in_progress distribution: {final_counts}")
+            self.logger.info(f"  Targets were:                   { {h: target_map[h] for h in all_active} }")
+
+            if final_counts:
+                values = list(final_counts.values())
+                max_diff = max(values) - min(values) if values else 0
+                self.logger.info(f"  Max spread (max−min): {max_diff} cases")
+                if max_diff <= 2:
+                    self.logger.info("  ✅ Distribution is balanced")
+                else:
+                    self.logger.warning(f"  ⚠️  Spread of {max_diff} cases remains (may be caused by large company groups that cannot be split)")
+
+            return df
+
+        except Exception as e:
+            self.logger.error(f"Error in rebalance_in_progress_cases: {str(e)}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return df
+
+
+
+
 class FinalProcessor:
     def __init__(self):
         # Configure logger (use global helpers.setup_logging where possible)
@@ -5291,13 +5159,9 @@ class FinalProcessor:
                             
                             # Verify what will be loaded and log the counts
                             if 'Issue Not Fixed' in sheet_names:
-                                prev_issue = pd.read_excel(prev_file, sheet_name='Issue Not Fixed')
-                                self.logger.info(f"  Issue Not Fixed: {len(prev_issue)} cases will be loaded")
-                                if len(prev_issue) > 0:
-                                    self.logger.info(f"    Sample cases: {prev_issue[['Case Number']].head(3).to_dict('records')}")
+                                self.logger.info("Issue Not Fixed sheet found in prev file")
                             if 'DND Emails' in sheet_names:
-                                prev_dnd = pd.read_excel(prev_file, sheet_name='DND Emails')
-                                self.logger.info(f"  DND Emails: {len(prev_dnd)} emails will be loaded")
+                                self.logger.info("DND Emails sheet found in prev file")
                         else:
                             self.logger.info(f"prev_file does not contain Issue Not Fixed or DND Emails sheets")
                             self.logger.info(f"This is likely a temp handler file - will search for actual output file")
@@ -5323,31 +5187,13 @@ class FinalProcessor:
                                             if 'Issue Not Fixed' in excel.sheet_names or 'DND Emails' in excel.sheet_names:
                                                 mod_time = os.path.getmtime(file_path)
                                                 possible_files.append((file_path, mod_time, file))
-                                                self.logger.info(f"Found candidate: {file}")
                                     except Exception:
                                         continue
                         
                         if possible_files:
-                            # Sort by modification time and use the most recent
                             possible_files.sort(key=lambda x: x[1], reverse=True)
                             prev_output_file = possible_files[0][0]
-                            self.logger.info(f"✓ Selected previous output file: {prev_output_file}")
-                            
-                            # Load and log counts
-                            try:
-                                with pd.ExcelFile(prev_output_file) as excel:
-                                    if 'Issue Not Fixed' in excel.sheet_names:
-                                        prev_issue = pd.read_excel(prev_output_file, sheet_name='Issue Not Fixed')
-                                        self.logger.info(f"  Issue Not Fixed: {len(prev_issue)} cases will be loaded")
-                                        if len(prev_issue) > 0:
-                                            self.logger.info(f"    Sample: {prev_issue['Case Number'].head(3).tolist()}")
-                                    if 'DND Emails' in excel.sheet_names:
-                                        prev_dnd = pd.read_excel(prev_output_file, sheet_name='DND Emails')
-                                        self.logger.info(f"  DND Emails: {len(prev_dnd)} emails will be loaded")
-                            except Exception as e:
-                                self.logger.warning(f"Could not verify contents: {str(e)}")
-                        else:
-                            self.logger.info("No previous output files found in directory")
+                            self.logger.info(f"Previous output file: {os.path.basename(prev_output_file)}")
                     except Exception as e:
                         self.logger.warning(f"Could not search directory: {str(e)}")
             
@@ -5574,37 +5420,19 @@ class FinalProcessor:
                 for col in date_columns:
                     if col in output_df.columns:
                         try:
-                            # Debug: show before
-                            sample_before = output_df[col].iloc[0] if len(output_df) > 0 else None
-                            before_str = str(sample_before)
-                            print(f"CONSOLE DEBUG {col} BEFORE: {repr(sample_before)} -> str: {before_str}")
-                            self.logger.info(f"DEBUG {col} BEFORE: {repr(sample_before)}")
-                            
                             def extract_date_str(val):
-                                """Extract date part as clean string - handles both strings and datetime objects"""
+                                """Extract date part as clean string."""
                                 if pd.isna(val) or val == '' or val == 'NaT':
                                     return ''
-                                
-                                # Handle pandas Timestamp and datetime objects
-                                if hasattr(val, 'date'):  # datetime, Timestamp, date objects have .date() method
-                                    return str(val.date())  # Returns YYYY-MM-DD
-                                
-                                # Handle strings
+                                if hasattr(val, 'date'):
+                                    return str(val.date())
                                 val_str = str(val).strip()
                                 if not val_str or val_str.lower() in ('nan', 'nat', 'none'):
                                     return ''
-                                # If it contains a space, extract date part only
                                 if ' ' in val_str:
-                                    date_only = val_str.split(' ')[0]
-                                    return date_only
+                                    return val_str.split(' ')[0]
                                 return val_str
-                            
                             output_df[col] = output_df[col].apply(extract_date_str)
-                            
-                            # Debug: show after
-                            sample_after = output_df[col].iloc[0] if len(output_df) > 0 else None
-                            self.logger.info(f"DEBUG {col} AFTER: {repr(sample_after)}")
-                            self.logger.info(f"✓ Converted {col} to date-only strings")
                         except Exception as e:
                             self.logger.warning(f"Could not format {col}: {str(e)}")
                 
@@ -5613,70 +5441,15 @@ class FinalProcessor:
                 # Auto-adjust columns for PA Cases sheet
                 self.auto_adjust_columns(writer, output_df, 'PA Cases')
             
-            # STEP 5: Add validation dropdowns using openpyxl (this will populate the 'Validation' sheet)
+            # STEP 5: Add validation dropdowns using openpyxl (populates the 'Validation' sheet)
             self.add_validation_dropdowns(output_file)
-            
-            # STEP 6: Final date formatting after validation dropdowns - ALL SHEETS
-            self.logger.info("=== STEP 6: FINAL DATE FORMATTING AFTER VALIDATION (ALL SHEETS) ===")
-            try:
-                from openpyxl import load_workbook
-                from datetime import datetime
-                
-                wb = load_workbook(output_file)
-                
-                date_columns_to_fix = ['Last Status Change', 'Created On', 'Completion Date']
-                
-                # Apply formatting to all sheets
-                for sheet_name in wb.sheetnames:
-                    try:
-                        ws = wb[sheet_name]
-                        
-                        # Skip non-data sheets
-                        if sheet_name in ['Validation', 'Counter', 'Summary']:
-                            continue
-                        
-                        # Get header row
-                        header = [cell.value for cell in ws[1]]
-                        
-                        # Format each date column that exists in this sheet
-                        for col_name in date_columns_to_fix:
-                            if col_name in header:
-                                col_idx = header.index(col_name) + 1
-                                cell_count = 0
-                                # Process each cell - convert datetime to date-only string
-                                for row in range(2, ws.max_row + 1):
-                                    cell = ws.cell(row, col_idx)
-                                    if cell.value:
-                                        try:
-                                            # Convert to datetime first
-                                            if isinstance(cell.value, str):
-                                                # Parse the string
-                                                dt = pd.to_datetime(cell.value, errors='coerce')
-                                                if pd.notna(dt):
-                                                    date_str = dt.strftime('%Y-%m-%d')
-                                                    cell.value = date_str
-                                                    cell.number_format = '@'  # Text format
-                                                    cell_count += 1
-                                            elif hasattr(cell.value, 'date'):  # datetime object
-                                                # Extract just the date
-                                                date_str = cell.value.date().isoformat()  # Returns YYYY-MM-DD
-                                                cell.value = date_str
-                                                cell.number_format = '@'  # Text format
-                                                cell_count += 1
-                                        except:
-                                            pass  # Skip cells that can't be converted
-                                
-                                if cell_count > 0:
-                                    self.logger.info(f"✓ Sheet '{sheet_name}': Fixed {cell_count} cells in '{col_name}'")
-                    except Exception as e:
-                        self.logger.warning(f"Could not format sheet '{sheet_name}': {str(e)}")
-                        continue
-                
-                wb.save(output_file)
-                self.logger.info("✓ Saved Excel file with timestamp-free dates across all sheets")
-            except Exception as e:
-                self.logger.warning(f"Could not apply date formatting to all sheets: {str(e)}")
-            
+
+            # NOTE: STEP 6 (post-write date cell formatting) removed.
+            # Dates are already converted to clean YYYY-MM-DD strings by pandas
+            # before writing (extract_date_str applied in 4.7 above), so an
+            # additional openpyxl cell-by-cell pass over the entire workbook is
+            # redundant and added significant processing time.
+
             # STEP 7: Delete temporary _prev_handlers file if it exists
             if prev_file and '_prev_handlers' in prev_file and os.path.exists(prev_file):
                 try:
@@ -5774,7 +5547,6 @@ class FinalProcessor:
             
             self.logger.info(f"Successfully consolidated {len(handler_sheets)} handler sheets with {total_cases} total cases")
             self.logger.info(f"Found {len(issue_not_resolved_cases)} cases marked as 'Issue Not Resolved' across all handler sheets")
-            self.logger.info(f"Consolidated data columns: {final_consolidated.columns.tolist()}")
             
             # Additional verification logging
             self.logger.info(f"Final consolidated DataFrame shape: {final_consolidated.shape}")
@@ -6679,6 +6451,21 @@ class FinalProcessor:
                         ).astype('Int64')
                         new_cases = new_cases.dropna(subset=['Case Number'])
 
+                    # Build the set of ALL case numbers that working_df has reassigned to
+                    # a DIFFERENT handler — these must never appear in this handler's prev_cases,
+                    # because redistribution / rebalancing already moved them.
+                    if 'Case Number' in working_df.columns:
+                        reassigned_away = set(
+                            working_df.loc[working_df['Assigned To'] != handler, 'Case Number']
+                            .apply(lambda v: int(float(str(v).strip()))
+                                   if pd.notna(v) and str(v).strip() != '' and str(v).strip().replace('.', '', 1).isdigit()
+                                   else None)
+                            .dropna()
+                            .astype(int)
+                        )
+                    else:
+                        reassigned_away = set()
+
                     # Preserved cases from previous handler sheets (also exclude Companies + Chat Agent cases)
                     prev_cases = prev_handler_data.get(handler, pd.DataFrame()).copy()
                     if not prev_cases.empty and 'Case Number' in prev_cases.columns:
@@ -6704,6 +6491,16 @@ class FinalProcessor:
                                 excluded = before_count - len(prev_cases)
                                 if excluded > 0:
                                     self.logger.info(f"    Excluded {excluded} Chat Agent cases from {handler}'s preserved cases")
+                        # CRITICAL: Exclude cases that were redistributed/rebalanced away from this
+                        # handler to another handler.  Without this, the case would appear on BOTH
+                        # the old handler's sheet (from prev_cases) AND the new handler's sheet
+                        # (from new_cases), with conflicting Assigned To values.
+                        if reassigned_away:
+                            before_count = len(prev_cases)
+                            prev_cases = prev_cases[~prev_cases['Case Number'].isin(reassigned_away)].copy()
+                            moved_out = before_count - len(prev_cases)
+                            if moved_out > 0:
+                                self.logger.info(f"    Removed {moved_out} redistributed case(s) from {handler}'s preserved list (reassigned to another handler)")
                         prev_cases['Assigned To'] = handler
                     else:
                         prev_cases = pd.DataFrame()
@@ -7147,73 +6944,42 @@ class FinalProcessor:
                 validation_sheet.cell(row=region_table_row_start + idx - 1, column=region_start_col + 2, value=formula)
                 # 3:00 column left blank except header
 
-            # --- Add VLOOKUP formula to PA Cases sheet, column K ---
-            # Only add to PA Cases sheet (not handler sheets) to avoid confusion
+            # --- Add VLOOKUP (Local Time) formula to PA Cases + all handler/Companies sheets ---
+            # Build the fixed lookup range once
+            vlookup_range = (
+                f'Validation!${get_column_letter(region_start_col)}$1'
+                f':${get_column_letter(region_start_col + 2)}${len(regions) + 1}'
+            )
+            vlookup_sheets = []
             if 'PA Cases' in wb.sheetnames:
-                data_sheet = wb['PA Cases']
-                pa_cases_max_row = data_sheet.max_row
-                
-                # Check if Local Time column already exists, if not create it
-                local_time_col = None
-                for col_idx, col_name in enumerate(data_sheet[1], 1):  # Check header row
-                    if col_name.value == 'Local Time':
-                        local_time_col = col_idx
-                        break
-                
-                if not local_time_col:
-                    # Create new Local Time column at the end
-                    local_time_col = data_sheet.max_column + 1
-                    # Set header for Local Time column
-                    data_sheet.cell(row=1, column=local_time_col, value='Local Time')
-                    self.logger.info(f"Created new Local Time column at column {local_time_col}")
-                else:
-                    self.logger.info(f"Local Time column already exists at column {local_time_col}")
-                
-                    # Add formulas to all data rows (overwrite existing data)
-                    for row in range(2, pa_cases_max_row + 1):
-                        # =VLOOKUP(k2,Validation!$H$1:$J$63,3) - Fixed range reference
-                        # Column k is State, looking up in Validation sheet H:J range
-                        formula = f'=VLOOKUP(k{row},Validation!{get_column_letter(region_start_col)}1:{get_column_letter(region_start_col+2)}{len(regions)+1},3)'
-                        data_sheet.cell(row=row, column=local_time_col, value=formula)
-                    self.logger.info(f"Added/Updated Local Time formulas in column {get_column_letter(local_time_col)} for {pa_cases_max_row-1} rows")
+                vlookup_sheets.append('PA Cases')
+            vlookup_sheets += [s for s in wb.sheetnames
+                               if isinstance(s, str) and (s.endswith("'s Cases") or s == 'Companies')]
 
-            # --- Add VLOOKUP formula to ALL handler sheets AND Companies ---
-            # Get all handler sheet names (sheets ending with "'s Cases") + Companies
-            handler_sheets = [sheet for sheet in wb.sheetnames if isinstance(sheet, str) and (sheet.endswith("'s Cases") or sheet == 'Companies')]
-            self.logger.info(f"Adding Local Time formulas to {len(handler_sheets)} sheets (Handlers + Companies): {handler_sheets}")
-            
-            for handler_sheet_name in handler_sheets:
+            for sheet_name_vl in vlookup_sheets:
                 try:
-                    handler_sheet = wb[handler_sheet_name]
-                    handler_max_row = handler_sheet.max_row
-                    
-                    # Check if Local Time column already exists, if not create it
-                    local_time_col = None
-                    for col_idx, col_name in enumerate(handler_sheet[1], 1):  # Check header row
-                        if col_name.value == 'Local Time':
-                            local_time_col = col_idx
+                    ws_vl = wb[sheet_name_vl]
+                    max_row = ws_vl.max_row
+                    if max_row < 2:
+                        continue
+
+                    # Find or create the Local Time header
+                    lt_col = None
+                    for c_idx, cell in enumerate(ws_vl[1], 1):
+                        if cell.value == 'Local Time':
+                            lt_col = c_idx
                             break
-                    
-                    if not local_time_col:
-                        # Create new Local Time column at the end
-                        local_time_col = handler_sheet.max_column + 1
-                        # Set header for Local Time column
-                        handler_sheet.cell(row=1, column=local_time_col, value='Local Time')
-                        self.logger.info(f"Created new Local Time column at column {local_time_col} in {handler_sheet_name}")
-                    else:
-                        self.logger.info(f"Local Time column already exists at column {local_time_col} in {handler_sheet_name}")
-                    
-                    # Add formulas to all data rows (overwrite existing data)
-                    for row in range(2, handler_max_row + 1):
-                        # =VLOOKUP(J2,Validation!$H$1:$J$63,3) - Same formula as PA Cases
-                        # Column J is State/Province, looking up in Validation sheet H:J range
-                        formula = f'=VLOOKUP(k{row},Validation!{get_column_letter(region_start_col)}1:{get_column_letter(region_start_col+2)}{len(regions)+1},3)'
-                        handler_sheet.cell(row=row, column=local_time_col, value=formula)
-                    
-                    self.logger.info(f"Added/Updated Local Time formulas in column {get_column_letter(local_time_col)} for {handler_max_row-1} rows in {handler_sheet_name}")
-                    
+                    if not lt_col:
+                        lt_col = ws_vl.max_column + 1
+                        ws_vl.cell(row=1, column=lt_col, value='Local Time')
+
+                    # Write VLOOKUP per data row (unavoidable with openpyxl)
+                    for row in range(2, max_row + 1):
+                        ws_vl.cell(row=row, column=lt_col,
+                                   value=f'=VLOOKUP(K{row},{vlookup_range},3,0)')
+
                 except Exception as e:
-                    self.logger.error(f"Error adding Local Time formulas to {handler_sheet_name}: {str(e)}")
+                    self.logger.error(f"Error adding Local Time formulas to {sheet_name_vl}: {e}")
                     continue
 
             # Save the workbook
@@ -7270,16 +7036,7 @@ class FinalProcessor:
                         processing_stats['SMS Processing Stats'] = {}
                     processing_stats['SMS Processing Stats']['Skipped/Updated Entries'] = sms_entries
                     
-                    self.logger.info(f"Successfully stored {len(sms_entries)} SMS entries for unified sheet")
-                    
-                    # Log some sample entries
-                    if sms_entries:
-                        self.logger.info("\nSample SMS entries collected:")
-                        for entry in sms_entries[:3]:  # Show first 3
-                            case = entry.get('Case Number', 'N/A')
-                            reply = entry.get('SMS Text', entry.get('Reply Text', 'N/A'))
-                            reason = entry.get('Reason', 'N/A')
-                            self.logger.info(f"Case {case}: Reply='{reply}', Reason='{reason}'")
+                    self.logger.info(f"Stored {len(sms_entries)} SMS entries for unified sheet")
                 except Exception as e:
                     self.logger.warning(f"Failed to store SMS entries: {str(e)}")
             return
@@ -7405,20 +7162,7 @@ class FinalProcessor:
             worksheet = writer.sheets[sheet_name]
             worksheet.autofit()
             
-            self.logger.info(f"\nSuccessfully wrote {len(all_entries)} entries to unified skipped sheet")
-            self.logger.info("Source distribution:")
-            source_counts = df['Source'].value_counts()
-            for source, count in source_counts.items():
-                self.logger.info(f"  {source}: {count} entries")
-            
-            # Log some sample entries for verification
-            self.logger.info("\nSample entries from unified sheet:")
-            sample_size = min(5, len(df))
-            for i, (_, row) in enumerate(df.head(sample_size).iterrows()):
-                self.logger.info(f"Row {i+1}: {row['Source']} - Case {row['Case Number']} - {row['Action']}")
-                reply_preview = str(row['Reply Text'])[:50] + ('...' if len(str(row['Reply Text'])) > 50 else '')
-                self.logger.info(f"  Reply: '{reply_preview}'")
-                self.logger.info(f"  Reason: {row['Reason']}")
+            self.logger.info(f"Unified skipped sheet: {len(all_entries)} entries")
 
         except Exception as e:
             self.logger.error(f"Error creating unified skipped sheet: {str(e)}")
@@ -7440,23 +7184,7 @@ class FinalProcessor:
         sms_entries = []
         stats = processing_stats if processing_stats is not None else {}
 
-        self.logger.info("\n=== Creating Skipped SMS / Email Replies Sheet ===")
-
         try:
-            # Log what we find in stats for debugging
-            if stats:
-                self.logger.info("Processing stats keys found:")
-                for key in stats.keys():
-                    self.logger.info(f"- {key}")
-                if 'SMS Processing Stats' in stats:
-                    self.logger.info("SMS Processing Stats keys:")
-                    for key in stats['SMS Processing Stats'].keys():
-                        self.logger.info(f"- {key}")
-                if 'Email Processing Stats' in stats:
-                    self.logger.info("Email Processing Stats keys:")
-                    for key in stats['Email Processing Stats'].keys():
-                        self.logger.info(f"- {key}")
-
             # Get SMS entries from both places they might be stored
             sms_entries = []
             if stats:
@@ -7595,15 +7323,7 @@ class FinalProcessor:
             try:
                 skipped_df.to_excel(writer, sheet_name='Skipped SMS and Email Replies', index=False)
                 self.auto_adjust_columns(writer, skipped_df, 'Skipped SMS and Email Replies')
-                self.logger.info(f"Successfully created Skipped SMS and Email Replies sheet with {len(skipped_df)} rows")
-                
-                # Log some sample rows for verification
-                self.logger.info("\nSample rows from unified sheet:")
-                sample_size = min(5, len(skipped_df))
-                sample_rows = skipped_df.head(sample_size)
-                for idx, row in sample_rows.iterrows():
-                    row_num = idx if isinstance(idx, int) else 0
-                    self.logger.info(f"Row {row_num+1}: Source={row['Source']}, Case={row['Case Number']}, Result={row['Result']}")
+                self.logger.info(f"Skipped SMS/Email sheet: {len(skipped_df)} rows")
             except Exception as write_error:
                 self.logger.error(f"Error writing unified sheet: {str(write_error)}")
                 raise
@@ -7634,21 +7354,21 @@ class FinalProcessor:
                 try:
                     self.logger.info(f"Loading previous DND Emails sheet from: {prev_file}")
                     prev_excel = pd.ExcelFile(prev_file)
-                    
-                    self.logger.info(f"Found sheets in DND prev_file: {prev_excel.sheet_names}")
-                    
+
                     if 'DND Emails' in prev_excel.sheet_names:
                         prev_dnd = pd.read_excel(prev_file, sheet_name='DND Emails')
                         self.logger.info(f"Previous DND Emails sheet loaded with {len(prev_dnd)} records")
-                        
+
                         if 'Email' in prev_dnd.columns:
-                            # Add ALL previous emails to our set
-                            for idx, row in prev_dnd.iterrows():
-                                email = str(row.get('Email', '')).strip()
-                                if email and email.lower() not in ['', 'nan', 'none']:
-                                    if email not in dnd_emails_set:
-                                        dnd_emails_set.add(email)
-                                        dnd_list.append({'Email': email, 'DND': 'Yes'})
+                            # Vectorised: strip + filter in bulk, then update set and list
+                            emails_series = prev_dnd['Email'].astype(str).str.strip()
+                            valid_emails = emails_series[
+                                (emails_series.str.len() > 0) &
+                                ~emails_series.str.lower().isin(['', 'nan', 'none'])
+                            ].unique().tolist()
+                            new_emails = [e for e in valid_emails if e not in dnd_emails_set]
+                            dnd_emails_set.update(new_emails)
+                            dnd_list.extend({'Email': e, 'DND': 'Yes'} for e in new_emails)
                             self.logger.info(f"Preserved {len(dnd_list)} emails from previous DND Emails sheet")
                         else:
                             self.logger.warning("Previous file does not contain 'Email' column")
@@ -7737,26 +7457,33 @@ class FinalProcessor:
                     self.logger.info(f"Loading previous Issue Not Fixed tab from: {prev_file}")
                     # Read the previous output file to get the Issue Not Fixed tab
                     prev_excel = pd.ExcelFile(prev_file)
-                    
-                    self.logger.info(f"Found sheets in prev_file: {prev_excel.sheet_names}")
-                    
+
                     if 'Issue Not Fixed' in prev_excel.sheet_names:
                         prev_sms = pd.read_excel(prev_file, sheet_name='Issue Not Fixed')
                         self.logger.info(f"Previous Issue Not Fixed tab loaded with {len(prev_sms)} records")
-                        
+
                         if 'Case Number' in prev_sms.columns:
-                            # Add ALL previous cases to our map (preserve everything exactly as it was)
-                            for idx, row in prev_sms.iterrows():
-                                case_num = str(row['Case Number']).strip()
-                                if case_num and case_num.lower() not in ['nan', 'none', '']:
-                                    final_issue_not_fixed_cases_map[case_num] = {
-                                        'Case Number': case_num,
-                                        'Incoming Channel': row.get('Incoming Channel', ''),
-                                        'Date Added': row.get('Date Added', ''), # Keep original date
-                                        'Actioned (Y/N)': row.get('Actioned (Y/N)', ''),
-                                        'Action Note': row.get('Action Note', ''),
-                                        'Source': 'Previous File' # Internal tracking
-                                    }
+                            # Vectorised: normalise all case numbers at once, then build map
+                            prev_sms = prev_sms.copy()
+                            prev_sms['_cn_str'] = prev_sms['Case Number'].astype(str).str.strip()
+                            valid_mask = (
+                                prev_sms['_cn_str'].str.len() > 0
+                            ) & ~prev_sms['_cn_str'].str.lower().isin(['nan', 'none', ''])
+                            prev_sms_valid = prev_sms[valid_mask]
+
+                            def _get_col(df, col):
+                                return df[col] if col in df.columns else pd.Series([''] * len(df), index=df.index)
+
+                            for _, row in prev_sms_valid.iterrows():
+                                cn = row['_cn_str']
+                                final_issue_not_fixed_cases_map[cn] = {
+                                    'Case Number': cn,
+                                    'Incoming Channel': row.get('Incoming Channel', ''),
+                                    'Date Added': row.get('Date Added', ''),
+                                    'Actioned (Y/N)': row.get('Actioned (Y/N)', ''),
+                                    'Action Note': row.get('Action Note', ''),
+                                    'Source': 'Previous File',
+                                }
                             self.logger.info(f"Preserved {len(final_issue_not_fixed_cases_map)} cases from previous Issue Not Fixed tab")
                         else:
                             self.logger.warning("Previous file does not contain 'Case Number' column")
@@ -7843,53 +7570,50 @@ class FinalProcessor:
                                 'Source': 'Email Processing' # Internal tracking
                             }
                             new_cases_from_sms_email += 1
-                            self.logger.info(f"Added NEW case from Email processing: {case_num_str} with today's date")
                         else:
-                            self.logger.debug(f"Skipped existing case from Email processing: {case_num_str} (already in tab)")
+                            pass  # already in map
 
             # STEP 3: Add new cases from PA Cases (only if not already in map)
             new_cases_from_pa = 0
-            issue_not_fixed_in_pa = df[df['Final Action'].str.lower() == 'issue not fixed'.lower()]
-            self.logger.info(f"Found {len(issue_not_fixed_in_pa)} cases with Final Action = 'Issue Not Fixed' in PA Cases")
-
-            for idx, row in issue_not_fixed_in_pa.iterrows():
-                case_num = str(row['Case Number']).strip()
-                if case_num and case_num not in final_issue_not_fixed_cases_map:
-                    # This is a truly NEW case - add it with today's date
-                    final_issue_not_fixed_cases_map[case_num] = {
-                        'Case Number': case_num,
-                        'Incoming Channel': row.get('Incoming Channel', ''),
-                        'Date Added': today_date_str,
-                        'Actioned (Y/N)': '',
-                        'Action Note': '',
-                        'Source': 'PA Cases' # Internal tracking
-                    }
-                    new_cases_from_pa += 1
-                    self.logger.info(f"Added NEW case from PA Cases: {case_num} with today's date")
-                else:
-                    self.logger.debug(f"Skipped existing case from PA Cases: {case_num} (already in tab)")
+            if 'Final Action' in df.columns and 'Case Number' in df.columns:
+                issue_not_fixed_in_pa = df[
+                    df['Final Action'].astype(str).str.strip().str.lower() == 'issue not fixed'
+                ].copy()
+                issue_not_fixed_in_pa['_cn_str'] = issue_not_fixed_in_pa['Case Number'].astype(str).str.strip()
+                # Only rows whose case number isn't already in the map
+                new_pa = issue_not_fixed_in_pa[
+                    ~issue_not_fixed_in_pa['_cn_str'].isin(final_issue_not_fixed_cases_map)
+                ]
+                inc_col = 'Incoming Channel' if 'Incoming Channel' in new_pa.columns else None
+                for _, row in new_pa.iterrows():
+                    cn = row['_cn_str']
+                    if cn and cn.lower() not in ('nan', 'none', ''):
+                        final_issue_not_fixed_cases_map[cn] = {
+                            'Case Number': cn,
+                            'Incoming Channel': row[inc_col] if inc_col else '',
+                            'Date Added': today_date_str,
+                            'Actioned (Y/N)': '',
+                            'Action Note': '',
+                            'Source': 'PA Cases',
+                        }
+                        new_cases_from_pa += 1
             
             # STEP 3.5: Add cases marked as "Issue Not Resolved" by handlers in their individual sheets
             new_cases_from_handlers = 0
             if issue_not_resolved_cases:
-                self.logger.info(f"Found {len(issue_not_resolved_cases)} cases marked as 'Issue Not Resolved' by handlers in their individual sheets")
-                
+                self.logger.info(f"Found {len(issue_not_resolved_cases)} handler-manual 'Issue Not Resolved' cases")
                 for case_data in issue_not_resolved_cases:
                     case_num = str(case_data.get('Case Number', '')).strip()
                     if case_num and case_num not in final_issue_not_fixed_cases_map:
-                        # This is a NEW case from handler manual updates - add it with today's date
                         final_issue_not_fixed_cases_map[case_num] = {
                             'Case Number': case_num,
                             'Incoming Channel': 'Handler Manual Update',
                             'Date Added': today_date_str,
                             'Actioned (Y/N)': '',
                             'Action Note': f"Handler: {case_data.get('Handler', 'Unknown')} - {case_data.get('Final Action', '')}",
-                            'Source': 'Handler Manual Update' # Internal tracking
+                            'Source': 'Handler Manual Update',
                         }
                         new_cases_from_handlers += 1
-                        self.logger.info(f"Added NEW case from Handler Manual Update: {case_num} (Handler: {case_data.get('Handler', 'Unknown')})")
-                    else:
-                        self.logger.debug(f"Skipped existing case from Handler Manual Update: {case_num} (already in tab)")
             else:
                 self.logger.info("No cases marked as 'Issue Not Resolved' by handlers found")
             
@@ -7942,13 +7666,7 @@ class FinalProcessor:
                 # Auto-adjust columns for Issue Not Fixed sheet
                 self.auto_adjust_columns(writer, sms_df, 'Issue Not Fixed')
                 
-                self.logger.info(f"Issue Not Fixed sheet created successfully with {len(sms_df)} cases")
-                
-                # Log sample cases for verification
-                sample_df = sms_df.head(5)[['Case Number', 'Incoming Channel', 'Date Added', 'Actioned (Y/N)']]
-                self.logger.info(f"Sample cases in sheet:")
-                for idx, row in sample_df.iterrows():
-                    self.logger.info(f"  Case {row['Case Number']}: Channel {row['Incoming Channel']}, Date {row['Date Added']}, Actioned {row['Actioned (Y/N)']}")
+                self.logger.info(f"Issue Not Fixed sheet: {len(sms_df)} cases")
                 
             else:
                 # Create empty sheet with headers
@@ -8388,7 +8106,7 @@ class FinalProcessor:
                 {'Category': 'Missing Handler Assignments', 'Metric': '', 'Count': df[df['Assigned To'].isna() | (df['Assigned To'] == '')].shape[0], 'Description': 'Cases without handler assignments'},
                 {'Category': 'Duplicate Case Numbers', 'Metric': '', 'Count': df[df.duplicated(subset=['Case Number'], keep=False)].shape[0], 'Description': 'Duplicate case numbers found'},
                 {'Category': 'Invalid Email Formats', 'Metric': '', 'Count': self.count_invalid_emails(df), 'Description': 'Invalid email address formats'},
-                {'Category': 'Empty Rows', 'Metric': '', 'Count': df[df.apply(lambda row: all(str(x).strip() == '' for x in row), axis=1)].shape[0], 'Description': 'Completely empty rows'},
+                {'Category': 'Empty Rows', 'Metric': '', 'Count': int((df.replace('', pd.NA).isna().all(axis=1)).sum()), 'Description': 'Completely empty rows'},
             ])
             
             # --- Handler Statistics Section ---
@@ -8528,170 +8246,84 @@ class FinalProcessor:
             # Add updated cases from SMS processing
             if processing_stats and 'SMS Processing Stats' in processing_stats:
                 sms_stats = processing_stats['SMS Processing Stats']
-                self.logger.info(f"SMS stats found: {list(sms_stats.keys()) if sms_stats else 'None'}")
+                sms_added_counts = {}
                 for action_type in ['Fixed', 'Issue Not Fixed', 'Refused Callback', 'DND']:
-                    if action_type in sms_stats and sms_stats[action_type]:
-                        cases = sms_stats[action_type]
-                        self.logger.info(f"SMS {action_type} cases found: {len(cases)}")
-                        for case_data in cases:
-                            # Handle both old format (string) and new format (dict)
-                            if isinstance(case_data, dict):
-                                case_num = case_data.get('case_number', '')
-                                sms_text = case_data.get('sms_text', '')
-                            else:
-                                case_num = str(case_data)
-                                sms_text = ''
-                            
-                            if case_num:
-                                # Reason - include SMS text if available
-                                if sms_text:
-                                    reason = f"SMS: '{action_type}' - '{sms_text[:100]}{'...' if len(sms_text) > 100 else ''}'"
-                                else:
-                                    reason = f"SMS: '{action_type}'"
-                                
-                                detailed_cases.append({
-                                    'Case Number': str(case_num),
-                                    'Action': 'updated',
-                                    'Reason': reason,
-                                    'Updated to': action_type
-                                })
-                                self.logger.info(f"Added SMS case to summary: {case_num} - {action_type}")
-                    else:
-                        self.logger.info(f"SMS {action_type} cases not found or empty")
-                
-                # Add Ambiguous SMS cases for review
-                if 'Ambiguous' in sms_stats and sms_stats['Ambiguous']:
-                    ambiguous_cases = sms_stats['Ambiguous']
-                    self.logger.info(f"SMS Ambiguous cases found: {len(ambiguous_cases)}")
-                    for case_data in ambiguous_cases:
-                        if isinstance(case_data, dict):
-                            case_num = case_data.get('case_number', '')
-                            sms_text = case_data.get('sms_text', '')
-                        else:
-                            case_num = str(case_data)
-                            sms_text = ''
-                        
+                    cases = sms_stats.get(action_type) or []
+                    for case_data in cases:
+                        case_num = case_data.get('case_number', '') if isinstance(case_data, dict) else str(case_data)
+                        sms_text = case_data.get('sms_text', '') if isinstance(case_data, dict) else ''
                         if case_num:
-                            # Reason - include SMS text if available
-                            if sms_text:
-                                reason = f"SMS: Ambiguous - needs review - '{sms_text[:100]}{'...' if len(sms_text) > 100 else ''}'"
-                            else:
-                                reason = f"SMS: Ambiguous - needs review"
-                            
-                            detailed_cases.append({
-                                'Case Number': str(case_num),
-                                'Action': 'needs_review',
-                                'Reason': reason,
-                                'Updated to': 'Ambiguous'
-                            })
-                            self.logger.info(f"Added SMS Ambiguous case to summary: {case_num}")
-                else:
-                    self.logger.info("SMS Ambiguous cases not found or empty")
-            
+                            reason = (f"SMS: '{action_type}' - '{sms_text[:100]}{'...' if len(sms_text) > 100 else ''}'"
+                                      if sms_text else f"SMS: '{action_type}'")
+                            detailed_cases.append({'Case Number': str(case_num), 'Action': 'updated',
+                                                   'Reason': reason, 'Updated to': action_type})
+                    sms_added_counts[action_type] = len(cases)
+                # Ambiguous SMS
+                ambiguous_cases = sms_stats.get('Ambiguous') or []
+                for case_data in ambiguous_cases:
+                    case_num = case_data.get('case_number', '') if isinstance(case_data, dict) else str(case_data)
+                    sms_text = case_data.get('sms_text', '') if isinstance(case_data, dict) else ''
+                    if case_num:
+                        reason = (f"SMS: Ambiguous - needs review - '{sms_text[:100]}{'...' if len(sms_text) > 100 else ''}'"
+                                  if sms_text else "SMS: Ambiguous - needs review")
+                        detailed_cases.append({'Case Number': str(case_num), 'Action': 'needs_review',
+                                               'Reason': reason, 'Updated to': 'Ambiguous'})
+                sms_added_counts['Ambiguous'] = len(ambiguous_cases)
+                self.logger.info(f"SMS detailed cases added to summary: {sms_added_counts}")
+
             # Add updated cases from Email processing
             if processing_stats and 'Email Processing Stats' in processing_stats:
                 email_stats = processing_stats['Email Processing Stats']
-                self.logger.info(f"Email stats found: {list(email_stats.keys()) if email_stats else 'None'}")
+                email_added_counts = {}
                 for action_type in ['Fixed', 'Issue Not Fixed', 'DND']:
-                    if action_type in email_stats and email_stats[action_type]:
-                        cases = email_stats[action_type]
-                        self.logger.info(f"Email {action_type} cases found: {len(cases)}")
-                        for case_data in cases:
-                            # Handle both old format (string) and new format (dict)
-                            if isinstance(case_data, dict):
-                                case_num = case_data.get('case_number', '')
-                                reply_text = case_data.get('reply_text', '')
-                            else:
-                                case_num = str(case_data)
-                                reply_text = ''
-                            
-                            if case_num:
-                                # Reason - include email reply text if available
-                                if reply_text:
-                                    reason = f"Email: '{action_type}' - '{reply_text[:100]}{'...' if len(reply_text) > 100 else ''}'"
-                                else:
-                                    reason = f"Email: '{action_type}'"
-                                
-                                detailed_cases.append({
-                                    'Case Number': str(case_num),
-                                    'Action': 'updated',
-                                    'Reason': reason,
-                                    'Updated to': action_type
-                                })
-                                self.logger.info(f"Added Email case to summary: {case_num} - {action_type}")
-                    else:
-                        self.logger.info(f"Email {action_type} cases not found or empty")
-                
-                # Add Ambiguous Email cases for review
-                if 'Ambiguous' in email_stats and email_stats['Ambiguous']:
-                    ambiguous_cases = email_stats['Ambiguous']
-                    self.logger.info(f"Email Ambiguous cases found: {len(ambiguous_cases)}")
-                    for case_data in ambiguous_cases:
-                        if isinstance(case_data, dict):
-                            case_num = case_data.get('case_number', '')
-                            reply_text = case_data.get('reply_text', '')
-                        else:
-                            case_num = str(case_data)
-                            reply_text = ''
-                        
+                    cases = email_stats.get(action_type) or []
+                    for case_data in cases:
+                        case_num = case_data.get('case_number', '') if isinstance(case_data, dict) else str(case_data)
+                        reply_text = case_data.get('reply_text', '') if isinstance(case_data, dict) else ''
                         if case_num:
-                            # Reason - include email reply text if available
-                            if reply_text:
-                                reason = f"Email: Ambiguous - needs review - '{reply_text[:100]}{'...' if len(reply_text) > 100 else ''}'"
-                            else:
-                                reason = f"Email: Ambiguous - needs review"
-                            
-                            detailed_cases.append({
-                                'Case Number': str(case_num),
-                                'Action': 'needs_review',
-                                'Reason': reason,
-                                'Updated to': 'Ambiguous'
-                            })
-                            self.logger.info(f"Added Email Ambiguous case to summary: {case_num}")
-                else:
-                    self.logger.info("Email Ambiguous cases not found or empty")
-            else:
-                self.logger.info("Email Processing Stats not found in processing stats")
-            
+                            reason = (f"Email: '{action_type}' - '{reply_text[:100]}{'...' if len(reply_text) > 100 else ''}'"
+                                      if reply_text else f"Email: '{action_type}'")
+                            detailed_cases.append({'Case Number': str(case_num), 'Action': 'updated',
+                                                   'Reason': reason, 'Updated to': action_type})
+                    email_added_counts[action_type] = len(cases)
+                # Ambiguous Email
+                ambiguous_cases = email_stats.get('Ambiguous') or []
+                for case_data in ambiguous_cases:
+                    case_num = case_data.get('case_number', '') if isinstance(case_data, dict) else str(case_data)
+                    reply_text = case_data.get('reply_text', '') if isinstance(case_data, dict) else ''
+                    if case_num:
+                        reason = (f"Email: Ambiguous - needs review - '{reply_text[:100]}{'...' if len(reply_text) > 100 else ''}'"
+                                  if reply_text else "Email: Ambiguous - needs review")
+                        detailed_cases.append({'Case Number': str(case_num), 'Action': 'needs_review',
+                                               'Reason': reason, 'Updated to': 'Ambiguous'})
+                email_added_counts['Ambiguous'] = len(ambiguous_cases)
+                self.logger.info(f"Email detailed cases added to summary: {email_added_counts}")
+
             # Add Bank/Sutherland updated cases
             if processing_stats and 'Bank/Sutherland Updated Cases' in processing_stats:
-                bank_sutherland_cases = processing_stats['Bank/Sutherland Updated Cases']
-                self.logger.info(f"Bank/Sutherland cases found: {len(bank_sutherland_cases)}")
-                if bank_sutherland_cases:
-                    for case_data in bank_sutherland_cases:
-                        case_num = str(case_data.get('case_number', ''))
-                        company_name = str(case_data.get('company_name', ''))
-                        if case_num:
-                            detailed_cases.append({
-                                'Case Number': str(case_num),
-                                'Action': 'updated',
-                                'Reason': f"Bank/Sutherland rule applied - Bank: {company_name}",
-                                'Updated to': 'Closed'
-                            })
-                            self.logger.info(f"Added Bank/Sutherland case to summary: {case_num} - {company_name}")
-                else:
-                    self.logger.info("No Bank/Sutherland cases to add")
-            else:
-                self.logger.info("Bank/Sutherland cases not found in processing stats")
-            
+                bs_cases = processing_stats['Bank/Sutherland Updated Cases'] or []
+                for case_data in bs_cases:
+                    case_num = str(case_data.get('case_number', ''))
+                    if case_num:
+                        detailed_cases.append({
+                            'Case Number': case_num, 'Action': 'updated',
+                            'Reason': f"Bank/Sutherland rule applied - Bank: {case_data.get('company_name', '')}",
+                            'Updated to': 'Closed'
+                        })
+                self.logger.info(f"Bank/Sutherland cases added to summary: {len(bs_cases)}")
+
             # Add DND updated cases
             if processing_stats and 'DND Updated Cases' in processing_stats:
-                dnd_cases = processing_stats['DND Updated Cases']
-                self.logger.info(f"DND cases found: {len(dnd_cases)}")
-                if dnd_cases:
-                    for case_data in dnd_cases:
-                        case_num = str(case_data.get('case_number', ''))
-                        source = str(case_data.get('source', 'DND rule'))
-                        if case_num:
-                            detailed_cases.append({
-                                'Case Number': str(case_num),
-                                'Action': 'updated',
-                                'Reason': f"{source} applied",
-                                'Updated to': 'DND'
-                            })
-                            self.logger.info(f"Added DND case to summary: {case_num} - {source}")
-                else:
-                    self.logger.info("No DND cases to add")
+                dnd_upd = processing_stats['DND Updated Cases'] or []
+                for case_data in dnd_upd:
+                    case_num = str(case_data.get('case_number', ''))
+                    if case_num:
+                        detailed_cases.append({
+                            'Case Number': case_num, 'Action': 'updated',
+                            'Reason': f"{case_data.get('source', 'DND rule')} applied",
+                            'Updated to': 'DND'
+                        })
+                self.logger.info(f"DND cases added to summary: {len(dnd_upd)}")
             # Now create the final summary DataFrame with the detailed cases table
             # First, create the main summary DataFrame
             self.logger.info("Creating main summary DataFrame...")
@@ -8803,7 +8435,7 @@ class FinalProcessor:
                 'missing_case_numbers': df[df['Case Number'].isna() | (df['Case Number'] == '')].shape[0],
                 'missing_handlers': df[df['Assigned To'].isna() | (df['Assigned To'] == '')].shape[0],
                 'duplicate_cases': df[df.duplicated(subset=['Case Number'], keep=False)].shape[0],
-                'empty_rows': df[df.apply(lambda row: all(str(x).strip() == '' for x in row), axis=1)].shape[0]
+                'empty_rows': int((df.replace('', pd.NA).isna().all(axis=1)).sum()),
             }
             self.logger.info("Validation Results:")
             for key, value in validation_results.items():
@@ -8829,54 +8461,18 @@ class FinalProcessor:
             return {}, [f"Validation error: {str(e)}"] 
 
     def create_sorting_summary_report(self, df, sheet_name="Main Output"):
-        """Create a summary report of case sorting results"""
+        """Log a compact status distribution summary — no per-case detail."""
         try:
             if 'Status' not in df.columns:
                 return
-            
-            self.logger.info(f"\n=== {sheet_name} - CASE SORTING SUMMARY ===")
-            
-            # Get status distribution
             status_counts = df['Status'].value_counts()
-            total_cases = len(df)
-            
-            # Calculate percentages
-            status_summary = []
-            for status, count in status_counts.items():
-                if pd.notna(status) and str(status).strip():
-                    percentage = (count / total_cases) * 100
-                    status_summary.append({
-                        'Status': status,
-                        'Count': count,
-                        'Percentage': f"{percentage:.1f}%"
-                    })
-            
-            # Sort by our custom order
-            status_order = {
-                'new': 1, 'in_progress': 2, 'in progress': 2, 'in progress today': 2,
-                'needs follow up': 3, 'pending': 4, 'escalation': 5, 'closed': 6,
-                'Closed': 6, 'bank/sutherland': 7, 'dnd': 8, 'DND': 8
-            }
-            
-            status_summary.sort(key=lambda x: status_order.get(str(x['Status']).lower(), 999))
-            
-            # Log the summary
-            self.logger.info(f"Total cases: {total_cases}")
-            self.logger.info("Status distribution (sorted by priority):")
-            for item in status_summary:
-                self.logger.info(f"  {item['Status']}: {item['Count']} cases ({item['Percentage']})")
-            
-            # Show first few cases of each status for verification
-            self.logger.info("\nFirst few cases by status:")
-            for item in status_summary[:5]:  # Show top 5 statuses
-                status = item['Status']
-                status_cases = df[df['Status'] == status].head(3)
-                if not status_cases.empty:
-                    case_numbers = status_cases['Case Number'].astype(str).tolist()
-                    self.logger.info(f"  {status}: {case_numbers}")
-            
-            self.logger.info(f"=== END {sheet_name} SORTING SUMMARY ===\n")
-            
+            total = len(df)
+            summary_parts = [
+                f"{s}: {c} ({c/total*100:.0f}%)"
+                for s, c in status_counts.items()
+                if pd.notna(s) and str(s).strip()
+            ]
+            self.logger.info(f"{sheet_name} status — {total} cases | {' | '.join(summary_parts)}")
         except Exception as e:
             self.logger.error(f"Error creating sorting summary report: {str(e)}")
 
