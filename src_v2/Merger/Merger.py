@@ -1,6 +1,5 @@
 import os
 import sys
-import subprocess
 import pandas as pd
 from pathlib import Path
 from tkinter import Tk, filedialog, messagebox
@@ -203,37 +202,26 @@ class ExcelMergerApp:
         footer_label.pack(side="bottom", pady=20)
     
     def return_to_main_menu(self):
-        """Return to the main menu application with aggressive environment cleaning"""
+        """Return to the main menu.
+
+        In a frozen .exe the main menu is already running in the same process —
+        just destroy this Tk root.  In development, re-launch main.py in a
+        subprocess as before.
+        """
         try:
-            if getattr(sys, 'frozen', False):
-                # On Windows, os.startfile is the cleanest way to launch the EXE as a new process
-                # It bypasses all environment variable inheritance issues
-                try:
-                    os.startfile(sys.executable)
-                except AttributeError:
-                    # Fallback for non-Windows
-                    env = os.environ.copy()
-                    for var in ['TCL_LIBRARY', 'TK_LIBRARY', '_MEIPASS', '_MEIPASS2', 
-                                'PYTHONPATH', 'PYTHONHOME', 'QT_PLUGIN_PATH', 
-                                'QT_QPA_PLATFORM_PLUGIN_PATH']:
-                        env.pop(var, None)
-                    subprocess.Popen([sys.executable], env=env)
-            else:
-                # Resolve path to src/main.py
-                # Current file is src/Merger/Merger.py
-                env = os.environ.copy()
+            if not getattr(sys, 'frozen', False):
+                import subprocess as _sp
                 current_dir = os.path.dirname(os.path.abspath(__file__))
-                src_dir = os.path.dirname(current_dir) # This gets to 'src'
+                src_dir = os.path.dirname(current_dir)
                 main_menu_path = os.path.join(src_dir, 'main.py')
-                
                 if os.path.exists(main_menu_path):
-                    subprocess.Popen([sys.executable, main_menu_path], env=env)
+                    _sp.Popen([sys.executable, main_menu_path])
                 else:
                     messagebox.showerror("Error", f"Main menu script not found: {main_menu_path}")
-            
+            # Frozen path: main menu window is still open — just close this one
             self.root.destroy()
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to open Main Menu: {e}")
+            messagebox.showerror("Error", f"Failed to return to Main Menu: {e}")
     
     def select_files(self):
         """Open file dialog to select Excel files"""

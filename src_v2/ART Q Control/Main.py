@@ -3782,36 +3782,17 @@ if support_agent:
 if proceed == "MAIN_MENU":
     print("[INFO] returning to main menu...")
     try:
-        # Prepare environment for subprocess
-        env = os.environ.copy()
-        
-        # 1. Aggressively clear PyInstaller-induced variables
-        # These can cause the child process to try and use this process's temp folder
-        for var in ['TCL_LIBRARY', 'TK_LIBRARY', '_MEIPASS', '_MEIPASS2', 
-                    'PYTHONPATH', 'PYTHONHOME', 'QT_PLUGIN_PATH', 
-                    'QT_QPA_PLATFORM_PLUGIN_PATH']:
-            env.pop(var, None)
-
-        # 2. Clean PATH of any references to the current temporary extraction folder
-        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-            mei_path = sys._MEIPASS
-            path_parts = env.get('PATH', '').split(os.pathsep)
-            cleaned_path = [p for p in path_parts if mei_path not in p]
-            env['PATH'] = os.pathsep.join(cleaned_path)
-
         if getattr(sys, 'frozen', False):
-            # In frozen app, sys.executable is the EXE. 
-            # Running it with no args launches the Main Menu.
-            subprocess.Popen([sys.executable], env=env)
+            # In-process: the main menu window is already running — just exit this
+            # tool's execution path so control returns to the Qt event loop.
+            print("[INFO] Frozen mode — main menu already running, exiting tool.")
         else:
-            # Resolve path to src/main.py
-            # Current file is src/ART Q Control/Main.py
+            import subprocess as _sp
             current_dir = os.path.dirname(os.path.abspath(__file__))
             src_dir = os.path.dirname(current_dir)
             main_menu_path = os.path.join(src_dir, 'main.py')
-            
             if os.path.exists(main_menu_path):
-                subprocess.Popen([sys.executable, main_menu_path], env=env)
+                _sp.Popen([sys.executable, main_menu_path])
             else:
                 print(f"[ERROR] Main menu not found at {main_menu_path}")
     except Exception as e:
@@ -4512,9 +4493,10 @@ if closed_by_user:
             sys.exit(0)
         else:
             print("[INFO] User wants to run again - restarting...")
-            # Restart the script
-            import subprocess
-            subprocess.Popen([sys.executable, __file__])
+            if not getattr(sys, 'frozen', False):
+                # Dev mode only — in a frozen .exe __file__ is not a runnable .py
+                import subprocess as _sp
+                _sp.Popen([sys.executable, __file__])
             sys.exit(0)
     except Exception as e:
         print(f"[WARN] Could not show restart dialog: {e}")

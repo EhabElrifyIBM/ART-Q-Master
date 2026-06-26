@@ -22,7 +22,6 @@ Core functionality:
 
 import os
 import sys
-import subprocess
 from datetime import date
 from typing import Optional
 
@@ -592,13 +591,23 @@ class ReachRateCalculatorWindow(QMainWindow, V2TypographyMixin):
             QMessageBox.warning(self, "File Not Found", "Output file not found.")
 
     def _back_to_menu(self):
-        """Return to main menu."""
+        """Return to main menu.
+
+        When running as a frozen .exe the main menu is already open in the same
+        process — just close this window.  In development, re-launch main.py in
+        a subprocess as before.
+        """
+        if getattr(sys, "frozen", False):
+            # In-process: main menu is the parent window — just close here
+            self.close()
+            return
         try:
+            import subprocess as _sp
             current_dir = os.path.dirname(os.path.abspath(__file__))
             src_v2_dir = os.path.dirname(current_dir)
             main_script = os.path.join(src_v2_dir, "main.py")
             if os.path.exists(main_script):
-                subprocess.Popen([sys.executable, main_script], cwd=src_v2_dir)
+                _sp.Popen([sys.executable, main_script], cwd=src_v2_dir)
                 self.close()
             else:
                 QMessageBox.warning(self, "Error", f"v2 main.py not found: {main_script}")

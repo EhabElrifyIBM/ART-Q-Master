@@ -25,14 +25,17 @@ Keyboard shortcuts:
 from __future__ import annotations
 
 import os
-import subprocess
+# subprocess intentionally removed — use QDesktopServices instead (avoids AV heuristics)
 import sys
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
-from PyQt5.QtCore import Qt, pyqtSignal, QThread, QTimer, QSize
-from PyQt5.QtGui import QKeySequence, QFont, QTextCharFormat, QColor, QTextCursor, QPainter, QPen, QBrush
+from PyQt5.QtCore import Qt, pyqtSignal, QThread, QTimer, QSize, QUrl
+from PyQt5.QtGui import (
+    QDesktopServices, QKeySequence, QFont, QTextCharFormat,
+    QColor, QTextCursor, QPainter, QPen, QBrush,
+)
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QSplitter, QStatusBar, QMessageBox, QFrame, QLabel,
@@ -947,12 +950,8 @@ def _open_in_explorer(path: str) -> None:
     """Open the output file's parent folder in the OS file explorer."""
     try:
         folder = str(Path(path).parent)
-        if sys.platform == "win32":
-            os.startfile(folder)  # type: ignore[attr-defined]
-        elif sys.platform == "darwin":
-            subprocess.Popen(["open", folder])
-        else:
-            subprocess.Popen(["xdg-open", folder])
+        # QDesktopServices handles all platforms cleanly without subprocess
+        QDesktopServices.openUrl(QUrl.fromLocalFile(folder))
     except Exception:
         pass
 

@@ -1753,6 +1753,14 @@ def run_case_reviewer(support_agents=None, support_agent=None):
                 if CaseClosingCode in ("PREVIOUS_CASE", "NAV_PREV"):
                     if pointer > 0:
                         pointer -= 1  # Go back one position in the pointer
+                        # Restore the previous case's status to 'in_progress' so the
+                        # status-filter at the top of the loop doesn't skip over it
+                        # (it may have been set to 'Closed' / 'In Progress Today' etc.)
+                        prev_idx = to_process_indices[pointer]
+                        prev_status = str(df.at[prev_idx, status_col]).strip().lower()
+                        if prev_status not in ('in_progress', 'skipped'):
+                            df.at[prev_idx, status_col] = 'in_progress'
+                            print(f"[INFO] ⬅ Restored previous case status to 'in_progress' for re-review")
                         print(f"[INFO] ⬅ Navigating to previous case - Pointer: {pointer}")
                     else:
                         print(f"[INFO] ⚠ Already at first case - cannot navigate backwards")

@@ -28,11 +28,13 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 # Paths
 # ---------------------------------------------------------------------------
 
-block_cipher  = None
-project_root  = os.getcwd()
-src_v2_path   = os.path.join(project_root, "src_v2")
-assets_path   = os.path.join(project_root, "assets")
-icon_path     = os.path.join(assets_path, "ibm_logo.png")
+block_cipher          = None
+project_root          = os.getcwd()
+src_v2_path           = os.path.join(project_root, "src_v2")
+art_q_control_path    = os.path.join(src_v2_path, "ART Q Control")
+reach_rate_path       = os.path.join(src_v2_path, "Reach Rate Calculator")
+assets_path           = os.path.join(project_root, "assets")
+icon_path             = os.path.join(assets_path, "ibm_logo.png")
 
 # ---------------------------------------------------------------------------
 # Data files
@@ -330,7 +332,9 @@ hiddenimports = [
 
 a = Analysis(
     [os.path.join(src_v2_path, "main.py")],
-    pathex=[src_v2_path],
+    # Both space-in-name directories must be on pathex so their modules are
+    # importable directly (e.g. ``import Dispatcher_v2``) inside the bundle.
+    pathex=[src_v2_path, art_q_control_path, reach_rate_path],
     binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,
@@ -380,8 +384,8 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=False,
-    console=True,                    # windowed GUI — no console window
+    upx=False,           # UPX compression triggers AV heuristics — keep off
+    console=True,        # Keep console window for debug output
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
@@ -400,7 +404,7 @@ coll = COLLECT(
     a.zipfiles,
     a.datas,
     strip=False,
-    upx=True,
-    upx_exclude=["vcruntime140.dll", "pythonw.exe"],
+    upx=False,           # UPX on bundled DLLs is the primary AV false-positive trigger
+    upx_exclude=[],
     name="ART Q Master v2",
 )

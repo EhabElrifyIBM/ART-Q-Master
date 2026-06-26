@@ -13,7 +13,6 @@ import shutil
 from copy import copy
 import threading
 import sys
-import subprocess
 
 from ui.responsive import calculate_responsive_font_size
 
@@ -181,36 +180,26 @@ class ExcelWorkbookAnalyzer:
         main_frame.rowconfigure(3, weight=1)
 
     def return_to_main_menu(self):
-        """Return to the main menu application with aggressive environment cleaning"""
+        """Return to the main menu.
+
+        In a frozen .exe the main menu is already running in the same process —
+        just destroy this Tk root.  In development, re-launch main.py in a
+        subprocess as before.
+        """
         try:
-            if getattr(sys, 'frozen', False):
-                # On Windows, os.startfile is the cleanest way to launch the EXE as a new process
-                # It bypasses all environment variable inheritance issues
-                try:
-                    os.startfile(sys.executable)
-                except AttributeError:
-                    # Fallback for non-Windows (though this app is Windows-targeted)
-                    env = os.environ.copy()
-                    for var in ['TCL_LIBRARY', 'TK_LIBRARY', '_MEIPASS', '_MEIPASS2', 
-                                'PYTHONPATH', 'PYTHONHOME', 'QT_PLUGIN_PATH', 
-                                'QT_QPA_PLATFORM_PLUGIN_PATH']:
-                        env.pop(var, None)
-                    subprocess.Popen([sys.executable], env=env)
-            else:
-                # Running from source
-                env = os.environ.copy()
+            if not getattr(sys, 'frozen', False):
+                import subprocess as _sp
                 current_dir = os.path.dirname(os.path.abspath(__file__))
                 src_dir = os.path.dirname(current_dir)
                 main_script = os.path.join(src_dir, 'main.py')
-                
                 if os.path.exists(main_script):
-                    subprocess.Popen([sys.executable, main_script], env=env)
+                    _sp.Popen([sys.executable, main_script])
                 else:
                     messagebox.showerror("Error", f"Main menu script not found: {main_script}")
-            
+            # Frozen path: main menu window is still open — just close this one
             self.root.destroy()
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to open Main Menu: {e}")
+            messagebox.showerror("Error", f"Failed to return to Main Menu: {e}")
     
     def browse_file(self):
         """Browse and select an Excel file"""

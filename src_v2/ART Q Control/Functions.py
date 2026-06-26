@@ -229,11 +229,6 @@ def check_driver_alive(driver):
         print("[CRITICAL] Browser has been closed!")
         print("[INFO] Terminating script...")
         print("="*60)
-        try:
-            os.system('taskkill /F /IM wmplayer.exe /T 2>nul')
-            os.system('taskkill /F /IM "Groove Music.exe" /T 2>nul')
-        except:
-            pass
         sys.exit(0)
 
 def safe_find(driver, by, locator, timeout=1, clickable=False, retries=3, poll=0.5):

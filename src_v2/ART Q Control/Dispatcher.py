@@ -300,29 +300,25 @@ def ask_for_excel_path():
 
 
 def launch_main_menu():
-    """Launch the main menu of the application"""
+    """Return to the main menu of the application.
+
+    In a frozen .exe the main menu is the parent process — nothing to relaunch.
+    In development, re-launch main.py in a subprocess.
+    """
     try:
-        # Prepare environment for subprocess
-        env = os.environ.copy()
-        
-        # Clear PyInstaller-induced variables
-        for var in ['_MEIPASS2', '_MEIPASS', 'PYTHONPATH']:
-            if var in env:
-                del env[var]
-        
         if getattr(sys, 'frozen', False):
-            # In frozen app, sys.executable is the EXE
-            subprocess.Popen([sys.executable], env=env)
+            # In-process: main menu window is already open — nothing to do here.
+            # The caller is responsible for closing the current tool window.
+            print("[INFO] launch_main_menu() called in frozen mode — main menu already running.")
+            return
+        import subprocess as _sp
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        src_dir = os.path.dirname(current_dir)
+        main_menu_path = os.path.join(src_dir, 'main.py')
+        if os.path.exists(main_menu_path):
+            _sp.Popen([sys.executable, main_menu_path])
         else:
-            # Resolve path to src/main.py
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            src_dir = os.path.dirname(current_dir)
-            main_menu_path = os.path.join(src_dir, 'main.py')
-            
-            if os.path.exists(main_menu_path):
-                subprocess.Popen([sys.executable, main_menu_path], env=env)
-            else:
-                print(f"[ERROR] Main menu not found at {main_menu_path}")
+            print(f"[ERROR] Main menu not found at {main_menu_path}")
     except Exception as e:
         print(f"[ERROR] Failed to launch main menu: {e}")
 
