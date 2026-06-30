@@ -16,6 +16,21 @@ from typing import Dict, Any, Optional, Callable
 from enum import Enum
 
 
+# ANSI escape codes — no-op on Windows terminals that don't support them; safe to include
+_ANSI = {
+    "INFO":      "\033[36m",   # cyan
+    "WARNING":   "\033[33m",   # yellow
+    "ERROR":     "\033[31m",   # red
+    "CRITICAL":  "\033[1;31m", # bold red
+    "RECOVERED": "\033[32m",   # green
+    "RESET":     "\033[0m",
+}
+_LEVEL_ABBREV = {
+    "INFO": "INFO ", "WARNING": "WARN ", "ERROR": "ERR  ",
+    "CRITICAL": "CRIT ", "RECOVERED": "RCVD ",
+}
+
+
 class ErrorLevel(Enum):
     """Error severity levels."""
     INFO = "INFO"
@@ -71,42 +86,33 @@ class ErrorLogger:
         self._setup_logging()
     
     def _get_log_directory(self) -> str:
-        """Get default log directory."""
-        # Try to find project root
-        current = os.path.dirname(os.path.abspath(__file__))
-        
-        # Navigate up to find logs directory
-        while current != os.path.dirname(current):  # Stop at root
-            potential_logs = os.path.join(current, 'logs')
-            if os.path.exists(potential_logs):
-                return potential_logs
-            
-            potential_logs = os.path.join(current, 'errors')
-            if os.path.exists(potential_logs):
-                return potential_logs
-            
-            current = os.path.dirname(current)
-        
-        # Default: create logs in home directory
-        logs_dir = os.path.expanduser('~/ART_Q_Master/logs')
+        """Return src_v2/logs/, creating it if needed."""
+        src_v2 = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        logs_dir = os.path.join(src_v2, "logs")
         os.makedirs(logs_dir, exist_ok=True)
         return logs_dir
     
     def _setup_logging(self):
-        """Setup Python logging handler."""
+        """Set up per-module logger: one daily append-mode file + coloured terminal."""
+        self.logger = logging.getLogger(f"artq.{self.module_name}")
+        if self.logger.handlers:
+            return  # already configured (singleton reuse)
+
+        self.logger.setLevel(logging.DEBUG)
+        self.logger.propagate = False
+
+        # Daily append-mode file — one file per module per day
         log_file = os.path.join(
             self.log_dir,
-            f"{self.module_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+            f"{self.module_name}_{datetime.now().strftime('%Y%m%d')}.log",
         )
-        
-        logging.basicConfig(
-            filename=log_file,
-            level=logging.DEBUG,
-            format='%(asctime)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
-        
-        self.logger = logging.getLogger(self.module_name)
+        fh = logging.FileHandler(log_file, mode="a", encoding="utf-8")
+        fh.setLevel(logging.DEBUG)
+        fh.setFormatter(logging.Formatter(
+            "%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
+            datefmt="%H:%M:%S",
+        ))
+        self.logger.addHandler(fh)
     
     def log_error(
         self,
@@ -161,10 +167,14 @@ class ErrorLogger:
             exc_info=exception
         )
         
-        # Print to console
-        print(f"[{error_level.value}] {self.module_name}: {message}")
+        # Coloured terminal output
+        colour = _ANSI.get(error_level.value, "")
+        abbrev = _LEVEL_ABBREV.get(error_level.value, error_level.value[:5])
+        reset = _ANSI["RESET"]
+        mod = self.module_name[:12].ljust(12)
+        print(f"{colour}[{abbrev}]{reset} {mod} | {message}")
         if recovery_action:
-            print(f"[RECOVERY] {recovery_action}")
+            print(f"{_ANSI['RECOVERED']}[RCVD ]{reset} {recovery_action}")
     
     def log_recovery(self, original_error: str, recovery_action: str, success: bool):
         """
@@ -189,8 +199,10 @@ class ErrorLogger:
         level = ErrorLevel.RECOVERED if success else ErrorLevel.WARNING
         status = "SUCCESS" if success else "FAILED"
         
-        self.logger.info(f"Recovery attempt [{status}]: {recovery_action}")
-        print(f"[RECOVERY {status}] {recovery_action}")
+        self.logger.info(f"Recovery [{status}]: {recovery_action}")
+        colour = _ANSI["RECOVERED"] if success else _ANSI["WARNING"]
+        reset = _ANSI["RESET"]
+        print(f"{colour}[RCVD  ]{reset} [{status}] {recovery_action}")
     
     def get_statistics(self) -> Dict[str, Any]:
         """Get error statistics."""
@@ -488,10 +500,10 @@ _error_logger = None
 def get_error_logger(module_name: str = "Application") -> ErrorLogger:
     """
     Get or create the global error logger singleton.
-    
+
     Args:
         module_name: Name of the module for logging
-        
+
     Returns:
         ErrorLogger: The global error logger instance
     """
@@ -499,3 +511,14 @@ def get_error_logger(module_name: str = "Application") -> ErrorLogger:
     if _error_logger is None:
         _error_logger = ErrorLogger(module_name)
     return _error_logger
+
+
+def log(level: str, message: str, module: str = "App", exc: Optional[Exception] = None) -> None:
+    """One-liner logger. level: 'info' | 'warn' | 'error' | 'critical'"""
+    level_map = {
+        "info": ErrorLevel.INFO, "warn": ErrorLevel.WARNING,
+        "warning": ErrorLevel.WARNING, "error": ErrorLevel.ERROR,
+        "critical": ErrorLevel.CRITICAL,
+    }
+    error_level = level_map.get(level.lower(), ErrorLevel.INFO)
+    get_error_logger(module).log_error(message, exc, error_level)

@@ -34,6 +34,7 @@ from ui.components_v2 import SearchBar, CompactToolCard, EnhancedToolCard, Profi
 from utils.tool_launcher import can_launch_tool, launch_tool
 from utils.tool_registry import get_tool_definition, get_tool_status_map
 from utils.recent_tools import get_recent_tools_manager
+from utils.error_logger import log
 
 
 ToolCard = Tuple[str, str, str]
@@ -743,10 +744,10 @@ class UnifiedToolShell(QMainWindow):
                 
                 saved_preset = config.get('ui_settings', {}).get('font_preset', 'normal')
                 preset_enum = FontSizePreset.from_string(saved_preset)
-                print(f"[INFO] Shell loaded font preset from config: {saved_preset}")
+                log("info", f"Shell loaded font preset from config: {saved_preset}", "Shell")
                 return preset_enum
         except Exception as e:
-            print(f"[WARNING] Could not load preset from config: {e}")
+            log("warn", f"Could not load preset from config: {e}", "Shell")
         
         return FontSizePreset.NORMAL
     

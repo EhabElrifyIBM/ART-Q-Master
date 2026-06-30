@@ -4,6 +4,8 @@ import sys
 from pathlib import Path
 from datetime import datetime
 
+from utils.error_logger import log
+
 
 class ConfigManager:
     """Manages configuration for the ART automation script"""
@@ -625,14 +627,14 @@ def init_config():
 
     def _run_setup_dialog(reason: str) -> None:
         """Show the setup dialog. Exits if the user cancels."""
-        print(f"[INFO] {reason} Starting setup dialog...")
+        log("info", f"{reason} Starting setup dialog...", "ConfigLoader")
         from PyQt5.QtWidgets import QApplication, QDialog
         app = QApplication.instance()
         if app is None:
             app = QApplication(sys.argv)
         dialog = ConfigSetupDialog(config_manager)
         if dialog.exec_() != QDialog.Accepted:
-            print("[ERROR] Configuration setup cancelled. Exiting application.")
+            log("error", "Configuration setup cancelled. Exiting.", "ConfigLoader")
             sys.exit(1)
 
     # Show setup dialog if config file is missing
@@ -643,16 +645,16 @@ def init_config():
     # show the setup dialog so this user can provide their own paths.
     try:
         config_manager.load_config()
-        print("[INFO] Configuration loaded successfully")
+        log("info", "Configuration loaded successfully", "ConfigLoader")
     except (FileNotFoundError, ValueError, json.JSONDecodeError) as e:
-        print(f"[WARN] Config validation failed: {e}")
+        log("warn", f"Config validation failed: {e}", "ConfigLoader")
         _run_setup_dialog("Config contains invalid or missing paths.")
         # After the user saves via the dialog, reload and validate their new config.
         try:
             config_manager.load_config()
-            print("[INFO] Configuration loaded successfully after setup")
+            log("info", "Configuration loaded after setup", "ConfigLoader")
         except Exception as e2:
-            print(f"[ERROR] Failed to load configuration after setup: {e2}")
+            log("error", f"Failed to load configuration after setup: {e2}", "ConfigLoader", exc=e2)
             sys.exit(1)
 
     # Sync the shared config manager so shell.py and other v2 components see fresh data
