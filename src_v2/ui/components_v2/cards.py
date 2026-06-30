@@ -910,32 +910,47 @@ class EnhancedToolCard(QFrame):
         self._description_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         self._typography.apply_to_widget(self._description_label, 'body')
 
-        # Launch button
+        # Launch button — sized to its own text, anchored bottom-right instead of
+        # stretching into a full-width bar that dominates the compact card.
         self._launch_button = GhostButton("Launch →")
         self._launch_button.clicked.connect(lambda: self.clicked.emit(self._tool_id))
+        footer_layout = QHBoxLayout()
+        footer_layout.setContentsMargins(0, 0, 0, 0)
+        footer_layout.addStretch(1)
+        footer_layout.addWidget(self._launch_button)
 
         # Add to main layout (no stretch — the card is fixed-height, sized to its content)
         layout.addLayout(header_layout)
         layout.addWidget(self._description_label)
-        layout.addWidget(self._launch_button)
+        layout.addLayout(footer_layout)
+
+        # Set minimum width and size policy BEFORE measuring text — the height
+        # calculation below wraps the description against this width, so it must
+        # already be in place or it falls back to a too-narrow guess.
+        self.setMinimumWidth(300)
+        from PyQt5.QtWidgets import QSizePolicy
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         # Size the card to fit its actual description text — no more, no less —
         # so short descriptions don't leave a block of dead space below them.
         self._reserve_description_height()
 
-        # Set minimum width and size policy. Vertical is Fixed: the card's height comes
-        # entirely from _reserve_description_height(), not from the grid stretching it.
-        self.setMinimumWidth(300)
-        from PyQt5.QtWidgets import QSizePolicy
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-
         # Enable mouse tracking for hover
         self.setMouseTracking(True)
 
     def _reserve_description_height(self) -> None:
-        """Fix the card's height to fit the actual description text (clamped to 1-3 lines)."""
+        """
+        Fix the card's height to fit the actual description text (clamped to 1-3 lines).
+
+        The card's width is responsive (Expanding), so a card stretched wide by the grid
+        wraps its description into fewer lines than the same text would at the 300px
+        minimum width. Measuring against the *current* rendered width (falling back to
+        the minimum before the card has been laid out) keeps the reserved height tight
+        instead of always assuming the narrowest case.
+        """
+        card_width = self.width() if self.width() > 0 else self.minimumWidth()
         metrics = self._description_label.fontMetrics()
-        available_width = max(self.minimumWidth() - (Spacing.CARD_PADDING * 2), 100)
+        available_width = max(card_width - (Spacing.CARD_PADDING * 2), 100)
         bounds = metrics.boundingRect(
             QRect(0, 0, available_width, 0),
             Qt.TextFlag.TextWordWrap,
@@ -943,15 +958,25 @@ class EnhancedToolCard(QFrame):
         )
         line_height = metrics.height()
         text_height = max(line_height, min(bounds.height(), line_height * 3))
-        self._description_label.setFixedHeight(text_height)
 
         header_height = 32  # icon size
         button_height = self._launch_button.sizeHint().height()
         spacing_total = Spacing.SM * 2
         padding_total = Spacing.CARD_PADDING * 2
-        self.setFixedHeight(
-            header_height + text_height + button_height + spacing_total + padding_total
-        )
+        new_card_height = header_height + text_height + button_height + spacing_total + padding_total
+
+        # Guard against redundant writes — setFixedHeight() triggers a layout pass,
+        # and resizeEvent() calls this method again, so an unconditional write here
+        # would recurse.
+        if self._description_label.height() != text_height:
+            self._description_label.setFixedHeight(text_height)
+        if self.height() != new_card_height:
+            self.setFixedHeight(new_card_height)
+
+    def resizeEvent(self, event) -> None:
+        """Recompute the reserved description height whenever the grid resizes this card."""
+        super().resizeEvent(event)
+        self._reserve_description_height()
 
     def hasHeightForWidth(self) -> bool:
         """Tell layouts this widget's height depends on its width (wrapped description)."""
