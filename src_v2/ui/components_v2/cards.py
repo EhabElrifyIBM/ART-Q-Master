@@ -907,25 +907,51 @@ class EnhancedToolCard(QFrame):
         # Description label
         self._description_label = QLabel(self._description)
         self._description_label.setWordWrap(True)
+        self._description_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         self._typography.apply_to_widget(self._description_label, 'body')
-        
+
         # Launch button
         self._launch_button = GhostButton("Launch →")
         self._launch_button.clicked.connect(lambda: self.clicked.emit(self._tool_id))
-        
+
         # Add to main layout
         layout.addLayout(header_layout)
         layout.addWidget(self._description_label, 1)
         layout.addWidget(self._launch_button)
-        
+
+        # Reserve enough vertical room for a 3-line description so QGridLayout
+        # (which handles height-for-width widgets unreliably) never clips the text.
+        self._reserve_description_height()
+
         # Set minimum size and size policy
-        self.setMinimumHeight(120)
         self.setMinimumWidth(300)
         from PyQt5.QtWidgets import QSizePolicy
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
-        
+
         # Enable mouse tracking for hover
         self.setMouseTracking(True)
+
+    def _reserve_description_height(self) -> None:
+        """Fix the description label's minimum height to 3 lines and resize the card to fit."""
+        line_height = self._description_label.fontMetrics().height()
+        self._description_label.setMinimumHeight(line_height * 3)
+        header_height = 32  # icon size
+        button_height = self._launch_button.sizeHint().height()
+        spacing_total = Spacing.SM * 2
+        padding_total = Spacing.CARD_PADDING * 2
+        self.setMinimumHeight(
+            header_height + (line_height * 3) + button_height + spacing_total + padding_total
+        )
+
+    def hasHeightForWidth(self) -> bool:
+        """Tell layouts this widget's height depends on its width (wrapped description)."""
+        return True
+
+    def heightForWidth(self, width: int) -> int:
+        """Delegate to the internal layout so QGridLayout sizes rows correctly."""
+        if self.layout() is not None:
+            return self.layout().totalHeightForWidth(width)
+        return super().heightForWidth(width)
     
     def _apply_style(self) -> None:
         """Apply enhanced card stylesheet."""
@@ -940,7 +966,6 @@ class EnhancedToolCard(QFrame):
                 background-color: {card_bg};
                 border: 2px solid {colors['border']};
                 border-radius: {BorderRadius.LG}px;
-                min-height: 120px;
                 min-width: 300px;
             }}
             
@@ -995,6 +1020,7 @@ class EnhancedToolCard(QFrame):
             self._typography.apply_to_widget(self._icon_label, 'h3')
             self._typography.apply_to_widget(self._name_label, 'h3', QFont.Weight.Bold)
             self._typography.apply_to_widget(self._description_label, 'body')
+            self._reserve_description_height()
         except Exception as e:
             print(f"Warning: Could not update font preset in EnhancedToolCard: {e}")
 

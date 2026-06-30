@@ -34,7 +34,7 @@ _TOOL_DEFINITIONS: List[ToolDefinition] = [
     ToolDefinition(
         tool_id="qcontrol",
         display_name="ART Q Control",
-        description="Launch AutoSender, CaseReviewer, and CompaniesProcess from a modern dispatcher with agent-aware configuration",
+        description="Launch AutoSender, CaseReviewer, and CompaniesProcess from one dispatcher.",
         area="Automation",
         status="modernized-phase-6.5-dispatcher",
         icon="🎯",
@@ -42,7 +42,7 @@ _TOOL_DEFINITIONS: List[ToolDefinition] = [
     ToolDefinition(
         tool_id="assigner",
         display_name="Assigner",
-        description="Assign cases to team members with smart distribution and workload balancing",
+        description="Assign cases to team members with smart, balanced distribution.",
         area="Operations",
         status="modernized-phase-6.4",
         icon="📊",
@@ -50,7 +50,7 @@ _TOOL_DEFINITIONS: List[ToolDefinition] = [
     ToolDefinition(
         tool_id="daily_merger",
         display_name="Daily Case Merger",
-        description="Merge up to 30 daily Active Cases workbooks into one deduplicated output with All Cases, Chat Agent, and Companies sheets",
+        description="Merge up to 30 daily case workbooks into one deduplicated file.",
         area="Operations",
         status="new",
         icon="📅",
@@ -58,7 +58,7 @@ _TOOL_DEFINITIONS: List[ToolDefinition] = [
     ToolDefinition(
         tool_id="monthly_merger",
         display_name="Monthly Case Merger",
-        description="Merge multiple monthly output workbooks into one deduplicated result — latest month always wins across All Cases, Chat Agent, and Companies sheets",
+        description="Combine monthly case workbooks, keeping the latest month's data.",
         area="Operations",
         status="new",
         icon="📆",
@@ -66,7 +66,7 @@ _TOOL_DEFINITIONS: List[ToolDefinition] = [
     ToolDefinition(
         tool_id="merger",
         display_name="Merger",
-        description="Merge multiple Excel files into a single consolidated dataset with sheet selection and column mapping",
+        description="Merge multiple Excel files into one consolidated dataset.",
         area="Operations",
         status="migrated-phase-6.3",
         icon="🔗",
@@ -74,7 +74,7 @@ _TOOL_DEFINITIONS: List[ToolDefinition] = [
     ToolDefinition(
         tool_id="archiver",
         display_name="Case Archiver",
-        description="Archive closed cases from Excel workbooks by month or age with automatic backups",
+        description="Archive closed cases by month or age, with automatic backups.",
         area="Operations",
         status="migrated-phase-6.2",
         icon="📦",
@@ -82,7 +82,7 @@ _TOOL_DEFINITIONS: List[ToolDefinition] = [
     ToolDefinition(
         tool_id="reachrate",
         display_name="Reach Rate Calculator",
-        description="Calculate team performance metrics and customer reach statistics across SMS, Email, and Phone channels",
+        description="Calculate reach rate and team performance across SMS, Email, and Phone.",
         area="Analytics",
         status="modernized-phase-6.9",
         icon="📈",
