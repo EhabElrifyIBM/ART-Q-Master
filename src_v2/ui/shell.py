@@ -395,7 +395,7 @@ class UnifiedToolShell(QMainWindow):
         return wrapper
 
     def _load_agent_name(self) -> str:
-        """Load agent name from config.json."""
+        """Load agent name from the agent config (written by setup dialog on first run)."""
         try:
             import json
             from pathlib import Path

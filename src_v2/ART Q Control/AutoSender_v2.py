@@ -1390,6 +1390,9 @@ def run_auto_sender(excel_path=None, support_agents=None, support_agent=None):
     if app is None:
         app = QApplication(sys.argv)
 
+    from ui.keyboard_blocker import install_keyboard_blocker
+    install_keyboard_blocker()
+
     print("=" * 60)
     print("       AUTO SENDER - Process New Cases")
     print("=" * 60)
@@ -1674,9 +1677,7 @@ def run_auto_sender(excel_path=None, support_agents=None, support_agent=None):
                 reason = "Stopped"
             else:
                 reason = "Completed"
-            progress_monitor.finish_process(reason)
             stats = progress_monitor.get_statistics()
-            progress_monitor.exec_()  # Show dialog until closed
             print(f"[SUCCESS] AutoSender {reason}! Stats: Cases Completed={stats['cases_completed']}, Failed={stats['cases_failed']}, Duration={stats['duration']}")
         
         # Cleanup

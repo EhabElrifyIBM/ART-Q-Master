@@ -1,16 +1,16 @@
 {
     "agent_settings": {
-        "agent_name": "Ehab Elrify",
-        "user_id": "Agent_Cairo_US_925",
-        "password": "123456",
-        "place_id": "Place_57080_SIPSwitch_US"
+        "agent_name": "",
+        "user_id": "",
+        "password": "",
+        "place_id": ""
     },
     "file_paths": {
-        "excel_base_path": "C:/Users/EhabElrify/Desktop/PA Daily Sheets",
-        "cache_directory": "C:/Users/EhabElrify/Desktop/ART NTO"
+        "excel_base_path": "",
+        "cache_directory": ""
     },
     "crm_settings": {
-        "excel_sheet_name": "Ehab's Cases"
+        "excel_sheet_name": ""
     },
     "execution_settings": {
         "start_time": "14:55",

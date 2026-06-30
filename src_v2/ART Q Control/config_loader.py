@@ -612,63 +612,65 @@ def ConfigSetupDialog(config_manager):
 
 def init_config():
     """
-    Initialize configuration. If config doesn't exist, show setup dialog.
+    Initialize configuration. If config doesn't exist or has invalid paths
+    (e.g. bundled defaults from another machine), show the setup dialog.
     Returns config_manager with loaded config.
-    
-    Returns:
-        ConfigManager: Initialized and loaded config manager
-        
+
     Raises:
-        SystemExit: If setup is cancelled or config cannot be loaded
+        SystemExit: If setup is cancelled or config cannot be saved.
     """
     # Determine config directory - use src_v2 directory
     script_dir = Path(__file__).parent.parent  # Go up from 'ART Q Control' to 'src_v2'
     config_manager = ConfigManager(config_dir=script_dir)
-    
-    # If config doesn't exist, show setup dialog
-    if not config_manager.config_exists():
-        print("[INFO] Config file not found. Starting first-time setup...")
-        
-        # Lazy import PyQt5 ONLY when dialog is needed
+
+    def _run_setup_dialog(reason: str) -> None:
+        """Show the setup dialog. Exits if the user cancels."""
+        print(f"[INFO] {reason} Starting setup dialog...")
         from PyQt5.QtWidgets import QApplication, QDialog
-        
         app = QApplication.instance()
         if app is None:
             app = QApplication(sys.argv)
-        
         dialog = ConfigSetupDialog(config_manager)
-        
         if dialog.exec_() != QDialog.Accepted:
             print("[ERROR] Configuration setup cancelled. Exiting application.")
             sys.exit(1)
-    
-    # Load and validate config
+
+    # Show setup dialog if config file is missing
+    if not config_manager.config_exists():
+        _run_setup_dialog("Config file not found.")
+
+    # Load and validate; if paths are invalid (e.g. belong to a different machine)
+    # show the setup dialog so this user can provide their own paths.
     try:
         config_manager.load_config()
         print("[INFO] Configuration loaded successfully")
-        
-        # Now that we have config, move config file to cache directory for future use
-        if config_manager.config_data:
-            cache_dir = Path(config_manager.config_data['file_paths']['cache_directory'])
-            cache_dir.mkdir(parents=True, exist_ok=True)
-            cache_config_path = cache_dir / "config.json"
-            
-            # If config is not already in cache directory, move it
-            if config_manager.config_path != cache_config_path:
-                try:
-                    import shutil
-                    shutil.copy2(config_manager.config_path, cache_config_path)
-                    # Update manager to use cache directory location
-                    config_manager.config_path = cache_config_path
-                    config_manager.config_dir = cache_dir
-                    print(f"[INFO] Config moved to cache directory: {cache_config_path}")
-                except Exception as e:
-                    print(f"[WARN] Could not move config to cache directory: {e}")
-        
-        return config_manager
     except (FileNotFoundError, ValueError, json.JSONDecodeError) as e:
-        print(f"[ERROR] Failed to load configuration: {e}")
-        print("[ERROR] Application cannot proceed without valid configuration. Exiting.")
-        sys.exit(1)
+        print(f"[WARN] Config validation failed: {e}")
+        _run_setup_dialog("Config contains invalid or missing paths.")
+        # After the user saves via the dialog, reload and validate their new config.
+        try:
+            config_manager.load_config()
+            print("[INFO] Configuration loaded successfully after setup")
+        except Exception as e2:
+            print(f"[ERROR] Failed to load configuration after setup: {e2}")
+            sys.exit(1)
+
+    # Move config to the user's cache directory for future runs
+    if config_manager.config_data:
+        cache_dir = Path(config_manager.config_data['file_paths']['cache_directory'])
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_config_path = cache_dir / "config.json"
+
+        if config_manager.config_path != cache_config_path:
+            try:
+                import shutil
+                shutil.copy2(config_manager.config_path, cache_config_path)
+                config_manager.config_path = cache_config_path
+                config_manager.config_dir = cache_dir
+                print(f"[INFO] Config moved to cache directory: {cache_config_path}")
+            except Exception as e:
+                print(f"[WARN] Could not move config to cache directory: {e}")
+
+    return config_manager
 
 # Made with Bob

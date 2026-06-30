@@ -48,7 +48,8 @@ from PyQt5.QtWidgets import (
     QPushButton, QComboBox, QScrollArea, QWidget, QFrame, QGridLayout,
     QProgressBar, QShortcut
 )
-from PyQt5.QtCore import Qt, QEvent
+from PyQt5.QtCore import Qt, QEvent, QTimer
+import threading
 from PyQt5.QtGui import QFont, QKeySequence
 
 # Import V2 foundation systems (Phase 6.8)
@@ -306,18 +307,20 @@ def check_companies_cache_and_ask(cache_path):
     dlg.exec_()
     return dlg.user_choice
 
-def show_per_case_outcomes_dialog(email, cases, batch_index=1, total_batches=1):
+def show_per_case_outcomes_dialog(email, cases, batch_index=1, total_batches=1, driver=None, email_body=None):
     """
     Shows a dialog allowing the user to set individual outcomes for each case in a company batch.
-    
+
     Phase 6.8: Modernized with V2 styling and components.
-    
+
     Args:
         email: Company email address
         cases: List of case dictionaries with case_number, serial, mtm
         batch_index: Current batch number (1-based)
         total_batches: Total number of batches
-    
+        driver: Selenium WebDriver for resend functionality
+        email_body: Pre-built email body for resend functionality
+
     Returns:
         dict: Mapping of case_number -> outcome string, or None if cancelled
     """
@@ -445,7 +448,17 @@ def show_per_case_outcomes_dialog(email, cases, batch_index=1, total_batches=1):
             quick_layout.addWidget(set_all_not_fixed)
             
             main_layout.addLayout(quick_layout)
-            
+
+            # Resend batch email button
+            if driver is not None and email_body is not None:
+                resend_layout = QHBoxLayout()
+                self.resend_btn = QPushButton("Resend Batch Email")
+                self.resend_btn.setFont(self.get_font('button'))
+                self.resend_btn.clicked.connect(self._resend_email)
+                resend_layout.addWidget(self.resend_btn)
+                resend_layout.addStretch()
+                main_layout.addLayout(resend_layout)
+
             # Action buttons
             btn_layout = QHBoxLayout()
             btn_layout.setSpacing(Spacing.SM)
@@ -468,6 +481,16 @@ def show_per_case_outcomes_dialog(email, cases, batch_index=1, total_batches=1):
                 if index >= 0:
                     combo.setCurrentIndex(index)
         
+        def _resend_email(self):
+            """Silently resend the batch email in a background thread, grey out for 45 seconds."""
+            self.resend_btn.setEnabled(False)
+            threading.Thread(
+                target=send_Email,
+                args=(driver, email_body),
+                daemon=True
+            ).start()
+            QTimer.singleShot(45000, lambda: self.resend_btn.setEnabled(True))
+
         def get_outcomes(self):
             """Get the selected outcomes as a dictionary."""
             return {case_num: combo.currentText() for case_num, combo in self.combos.items()}
@@ -773,7 +796,7 @@ def run_companies_process(driver, cache_file, agent_name, sheet_name="Companies"
             # STEP 9: Get PER-CASE outcomes (instead of single outcome)
             # =====================================================================
             print("[INFO] Step 9: Getting outcomes for each case...")
-            case_outcomes = show_per_case_outcomes_dialog(email, solution_provided_cases, batch_index, total_groups)
+            case_outcomes = show_per_case_outcomes_dialog(email, solution_provided_cases, batch_index, total_groups, driver=driver, email_body=email_body)
             
             if case_outcomes is None:
                 print("[INFO] Per-case outcomes cancelled - skipping this company")
@@ -980,6 +1003,9 @@ def run_companies_process_standalone(support_agents=None, support_agent=None):
         print("[INFO] Initializing QApplication...")
         app = QApplication(sys.argv)
     print("[INFO] ✓ QApplication ready")
+
+    from ui.keyboard_blocker import install_keyboard_blocker
+    install_keyboard_blocker()
     
     # ===== PHASE 6.8: Initialize V2 Foundation Systems =====
     theme_manager = None

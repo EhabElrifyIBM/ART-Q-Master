@@ -1507,6 +1507,9 @@ def run_case_reviewer(support_agents=None, support_agent=None):
     if app is None:
         app = QApplication(sys.argv)
 
+    from ui.keyboard_blocker import install_keyboard_blocker
+    install_keyboard_blocker()
+
     # ===== PHASE 3.2: Initialize Theme & Accessibility =====
     try:
         from ui.theme_manager import get_theme_manager

@@ -328,13 +328,11 @@ class MergerWindow(QMainWindow, V2TypographyMixin):
             QMessageBox.information(self, "Preview Merge", "Configure at least one column mapping first.")
             return
 
-        progress = ProgressDialog(self)
-        progress.set_title("Preparing Preview")
-        progress.set_message("Generating merge preview...")
+        progress = ProgressDialog(self, message="Generating merge preview...", title="Preparing Preview")
         progress.show()
 
         self.worker = MergerWorker(self.service, "preview", mappings)
-        self.worker.progress.connect(progress.update_progress)
+        self.worker.progress.connect(lambda v, msg: (progress.set_progress(v), progress.set_message(msg)))
         self.worker.preview_ready.connect(
             lambda success, message, preview_df, stats: self._on_preview_ready(
                 success, message, preview_df, stats, progress
@@ -381,13 +379,11 @@ class MergerWindow(QMainWindow, V2TypographyMixin):
             include_source_info=True,
         )
 
-        progress = ProgressDialog(self)
-        progress.set_title("Merging Files")
-        progress.set_message("Preparing merge...")
+        progress = ProgressDialog(self, message="Preparing merge...", title="Merging Files")
         progress.show()
 
         self.worker = MergerWorker(self.service, "merge", config)
-        self.worker.progress.connect(progress.update_progress)
+        self.worker.progress.connect(lambda v, msg: (progress.set_progress(v), progress.set_message(msg)))
         self.worker.merge_finished.connect(
             lambda success, output_file, result: self._on_merge_complete(
                 success, output_file, result, progress

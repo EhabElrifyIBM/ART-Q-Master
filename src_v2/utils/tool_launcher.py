@@ -84,7 +84,7 @@ def _show_window(window) -> None:
 def _launch_qcontrol_inprocess() -> None:
     # "ART Q Control" dir is on sys.path — import Dispatcher_v2 directly
     import Dispatcher_v2  # type: ignore[import]
-    Dispatcher_v2.show_mode_selector()
+    Dispatcher_v2.main()
 
 
 def _launch_assigner_inprocess() -> None:

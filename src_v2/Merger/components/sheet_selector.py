@@ -179,7 +179,7 @@ class SheetSelectorWidget(QWidget, V2TypographyMixin):
         self.subtitle_label.setStyleSheet(
             f"color: {colors['text_secondary']}; background: transparent; border: none;"
         )
-        self.scroll_area.setStyleSheet("background: transparent; border: none;")
+        self.scroll.setStyleSheet("background: transparent; border: none;")
 
     def apply_typography(self):
         """Apply typography to widgets."""

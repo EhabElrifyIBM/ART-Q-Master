@@ -64,11 +64,11 @@ class FileListWidget(QWidget):
         """Set up the user interface."""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(Spacing.MEDIUM)
+        layout.setSpacing(Spacing.MD)
         
         # Title
         title_label = QLabel("Excel Files to Merge", self)
-        title_label.setFont(self._typography.get_font(FontSizePreset.LARGE))
+        title_label.setFont(self._typography.create_font('h3'))
         layout.addWidget(title_label)
         
         # Drop zone
@@ -80,8 +80,8 @@ class FileListWidget(QWidget):
         self._drop_zone.dropEvent = self._on_drop
         
         drop_layout = QVBoxLayout(self._drop_zone)
-        drop_layout.setContentsMargins(Spacing.LARGE, Spacing.LARGE, Spacing.LARGE, Spacing.LARGE)
-        drop_layout.setSpacing(Spacing.SMALL)
+        drop_layout.setContentsMargins(Spacing.LG, Spacing.LG, Spacing.LG, Spacing.LG)
+        drop_layout.setSpacing(Spacing.SM)
         
         # Drop zone icon/text
         icon_label = QLabel("📁", self._drop_zone)
@@ -91,19 +91,19 @@ class FileListWidget(QWidget):
         
         drop_text = QLabel("Drag & Drop Excel Files Here", self._drop_zone)
         drop_text.setAlignment(Qt.AlignCenter)
-        drop_text.setFont(self._typography.get_font(FontSizePreset.NORMAL))
+        drop_text.setFont(self._typography.create_font('body'))
         drop_layout.addWidget(drop_text)
         
         drop_hint = QLabel("(Multiple files supported)", self._drop_zone)
         drop_hint.setAlignment(Qt.AlignCenter)
-        drop_hint.setFont(self._typography.get_font(FontSizePreset.SMALL))
+        drop_hint.setFont(self._typography.create_font('body_sm'))
         drop_layout.addWidget(drop_hint)
         
         layout.addWidget(self._drop_zone)
         
         # Buttons row
         button_layout = QHBoxLayout()
-        button_layout.setSpacing(Spacing.SMALL)
+        button_layout.setSpacing(Spacing.SM)
         
         browse_btn = PrimaryButton("Browse Files", self)
         browse_btn.setMinimumHeight(44)  # WCAG 2.1 AA
@@ -120,18 +120,18 @@ class FileListWidget(QWidget):
         
         # File list
         list_label = QLabel("Selected Files:", self)
-        list_label.setFont(self._typography.get_font(FontSizePreset.NORMAL))
+        list_label.setFont(self._typography.create_font('body'))
         layout.addWidget(list_label)
         
         self._file_list = QListWidget(self)
         self._file_list.setMinimumHeight(150)
-        self._file_list.setFont(self._typography.get_font(FontSizePreset.SMALL))
+        self._file_list.setFont(self._typography.create_font('body_sm'))
         self._file_list.setSelectionMode(QListWidget.SingleSelection)
         layout.addWidget(self._file_list)
         
         # File list buttons
         file_btn_layout = QHBoxLayout()
-        file_btn_layout.setSpacing(Spacing.SMALL)
+        file_btn_layout.setSpacing(Spacing.SM)
         
         remove_btn = SecondaryButton("Remove Selected", self)
         remove_btn.setMinimumHeight(44)
@@ -143,12 +143,12 @@ class FileListWidget(QWidget):
         
         # Recent operations section
         recent_label = QLabel("Recent Merge Operations:", self)
-        recent_label.setFont(self._typography.get_font(FontSizePreset.NORMAL))
+        recent_label.setFont(self._typography.create_font('body'))
         layout.addWidget(recent_label)
         
         self._recent_list = QListWidget(self)
         self._recent_list.setMaximumHeight(100)
-        self._recent_list.setFont(self._typography.get_font(FontSizePreset.SMALL))
+        self._recent_list.setFont(self._typography.create_font('body_sm'))
         self._recent_list.itemDoubleClicked.connect(self._on_recent_operation_clicked)
         layout.addWidget(self._recent_list)
         
@@ -157,59 +157,62 @@ class FileListWidget(QWidget):
     
     def _apply_styles(self):
         """Apply theme-aware styles."""
-        bg_color = Colors.get_background(self._theme_mode)
-        border_color = Colors.get_border(self._theme_mode)
-        text_color = Colors.get_text_primary(self._theme_mode)
-        
+        colors = Colors.DARK if self._theme_mode == "dark" else Colors.LIGHT
+        bg_color = colors['background']
+        border_color = colors['border']
+        text_color = colors['text_primary']
+        hover_bg = colors['surface_hover']
+        primary = colors['primary']
+
         # Drop zone styles
         self._drop_zone.setStyleSheet(f"""
             QFrame {{
                 background-color: {bg_color};
                 border: 2px dashed {border_color};
-                border-radius: {BorderRadius.MEDIUM}px;
+                border-radius: {BorderRadius.MD}px;
             }}
             QFrame:hover {{
-                border-color: {Colors.PRIMARY};
+                border-color: {primary};
             }}
         """)
-        
+
         # File list styles
         self._file_list.setStyleSheet(f"""
             QListWidget {{
                 background-color: {bg_color};
                 border: 1px solid {border_color};
-                border-radius: {BorderRadius.SMALL}px;
-                padding: {Spacing.SMALL}px;
+                border-radius: {BorderRadius.SM}px;
+                padding: {Spacing.SM}px;
                 color: {text_color};
             }}
             QListWidget::item {{
-                padding: {Spacing.SMALL}px;
-                border-radius: {BorderRadius.SMALL}px;
+                padding: {Spacing.SM}px;
+                border-radius: {BorderRadius.SM}px;
             }}
             QListWidget::item:hover {{
-                background-color: {Colors.get_hover_background(self._theme_mode)};
+                background-color: {hover_bg};
             }}
             QListWidget::item:selected {{
-                background-color: {Colors.PRIMARY};
+                background-color: {primary};
                 color: white;
             }}
         """)
-        
+
         # Recent list styles
         self._recent_list.setStyleSheet(f"""
             QListWidget {{
                 background-color: {bg_color};
                 border: 1px solid {border_color};
-                border-radius: {BorderRadius.SMALL}px;
-                padding: {Spacing.SMALL}px;
+                border-radius: {BorderRadius.SM}px;
+                padding: {Spacing.SM}px;
                 color: {text_color};
             }}
             QListWidget::item {{
-                padding: {Spacing.SMALL}px;
-                border-radius: {BorderRadius.SMALL}px;
+                padding: {Spacing.SM}px;
+                border-radius: {BorderRadius.SM}px;
             }}
             QListWidget::item:hover {{
-                background-color: {Colors.get_hover_background(self._theme_mode)};
+                background-color: {hover_bg};
             }}
         """)
     
@@ -235,11 +238,12 @@ class FileListWidget(QWidget):
                 if self._is_valid_excel_file(file_path):
                     event.acceptProposedAction()
                     # Visual feedback
+                    _c = Colors.DARK if self._theme_mode == "dark" else Colors.LIGHT
                     self._drop_zone.setStyleSheet(f"""
                         QFrame {{
-                            background-color: {Colors.get_hover_background(self._theme_mode)};
-                            border: 2px solid {Colors.PRIMARY};
-                            border-radius: {BorderRadius.MEDIUM}px;
+                            background-color: {_c['surface_hover']};
+                            border: 2px solid {_c['primary']};
+                            border-radius: {BorderRadius.MD}px;
                         }}
                     """)
                     return

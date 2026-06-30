@@ -43,6 +43,8 @@ def _ensure_app():
         _app_instance = QApplication.instance()
         if _app_instance is None:
             _app_instance = QApplication(sys.argv)
+    from ui.keyboard_blocker import install_keyboard_blocker
+    install_keyboard_blocker()
     return _app_instance
 
 
@@ -791,16 +793,19 @@ def main():
         print("[INFO] Starting Auto Sender mode...")
         from AutoSender_v2 import run_auto_sender
         run_auto_sender(support_agents=support_agents)
+        main()
 
     elif result == 2:  # Case Reviewer
         print("[INFO] Starting Case Reviewer mode...")
         from CaseReviewer_v2 import run_case_reviewer
         run_case_reviewer(support_agents=support_agents)
+        main()
 
     elif result == 5:  # Companies Process
         print("[INFO] Starting Companies Process mode...")
         from CompaniesProcess_v2 import run_companies_process_standalone
         run_companies_process_standalone(support_agents=support_agents)
+        main()
         
     elif result == 3:  # Update Configuration
         print("[INFO] Opening configuration setup...")
