@@ -655,21 +655,12 @@ def init_config():
             print(f"[ERROR] Failed to load configuration after setup: {e2}")
             sys.exit(1)
 
-    # Move config to the user's cache directory for future runs
-    if config_manager.config_data:
-        cache_dir = Path(config_manager.config_data['file_paths']['cache_directory'])
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        cache_config_path = cache_dir / "config.json"
-
-        if config_manager.config_path != cache_config_path:
-            try:
-                import shutil
-                shutil.copy2(config_manager.config_path, cache_config_path)
-                config_manager.config_path = cache_config_path
-                config_manager.config_dir = cache_dir
-                print(f"[INFO] Config moved to cache directory: {cache_config_path}")
-            except Exception as e:
-                print(f"[WARN] Could not move config to cache directory: {e}")
+    # Sync the shared config manager so shell.py and other v2 components see fresh data
+    try:
+        from config.manager import get_config_manager
+        get_config_manager().load()
+    except Exception:
+        pass
 
     return config_manager
 

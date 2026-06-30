@@ -395,18 +395,14 @@ class UnifiedToolShell(QMainWindow):
         return wrapper
 
     def _load_agent_name(self) -> str:
-        """Load agent name from the agent config (written by setup dialog on first run)."""
+        """Load agent name from unified config via ConfigManager."""
         try:
-            import json
-            from pathlib import Path
-            config_path = Path(__file__).parent.parent / "config.json"
-            if config_path.exists():
-                with open(config_path, 'r') as f:
-                    config = json.load(f)
-                return config.get('agent_settings', {}).get('agent_name', 'User')
+            from config.manager import get_config_manager
+            name = get_config_manager().get("agent_settings.agent_name", "User")
+            return name if name and name.strip() else "User"
         except Exception as e:
             print(f"Warning: Could not load agent name: {e}")
-        return "User"
+            return "User"
 
     def _get_recent_tools(self) -> List[str]:
         """Get recent tools from manager."""

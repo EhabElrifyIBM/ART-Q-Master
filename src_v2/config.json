@@ -17,8 +17,10 @@
         "end_time": "23:59",
         "refresh_interval": 10
     },
-    "theme_mode": "light",
     "ui_settings": {
-        "font_preset": "normal"
+        "theme_mode": "light",
+        "font_preset": "normal",
+        "high_contrast": false,
+        "animations_enabled": true
     }
 }

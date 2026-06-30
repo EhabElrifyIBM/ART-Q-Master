@@ -251,8 +251,8 @@ class MainWindow(QMainWindow, V2TypographyMixin):
 
         # Sync initial DEV MODE state from config
         try:
-            from config.manager import config_manager as _cm
-            self.settings_bus.set_dev_mode(_cm.get('advanced.dev_mode', False))
+            from config.manager import get_config_manager
+            self.settings_bus.set_dev_mode(get_config_manager().get('advanced.dev_mode', False))
         except Exception:
             pass
         

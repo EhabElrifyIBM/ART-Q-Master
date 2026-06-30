@@ -50,7 +50,7 @@ def get_runtime_paths() -> RuntimePaths:
         art_q_control_dir=os.path.join(src_v2_root, "ART Q Control"),
         ui_dir=os.path.join(src_v2_root, "ui"),
         utils_dir=_utils_dir(),
-        config_file=os.path.join(project_root, "config.json"),
+        config_file=os.path.join(src_v2_root, "config.json"),
     )
 
 
@@ -92,25 +92,14 @@ def get_ui_font_size(default: int = 22) -> int:
 
 
 def get_theme_mode(default: str = "light") -> str:
-    """
-    Read the persisted theme mode from config.json.
-    Falls back to theme_config.json for backward compatibility.
-    """
-    paths = get_runtime_paths()
-    
-    # Try config.json first (new location)
-    config = read_json_file(paths.config_file, default={})
-    value = config.get("theme_mode")
-    if value in {"light", "dark", "auto"}:
-        return value
-    
-    # Fallback to theme_config.json (legacy location)
-    theme_config_path = os.path.join(paths.project_root, "theme_config.json")
-    theme_config = read_json_file(theme_config_path, default={})
-    value = theme_config.get("theme_mode", default)
-    if value in {"light", "dark", "auto"}:
-        return value
-    
+    """Read theme mode from the unified config via ConfigManager."""
+    try:
+        from config.manager import get_config_manager
+        value = get_config_manager().get("ui_settings.theme_mode", default)
+        if value in {"light", "dark", "auto"}:
+            return value
+    except Exception:
+        pass
     return default
 
 

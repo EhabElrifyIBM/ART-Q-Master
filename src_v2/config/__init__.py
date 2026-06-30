@@ -52,7 +52,7 @@ from .validator import (
 
 from .manager import (
     ConfigManager,
-    config_manager,
+    get_config_manager,
 )
 
 from .migrator import (
@@ -95,7 +95,7 @@ __all__ = [
     
     # Manager (Phase 7.2)
     'ConfigManager',
-    'config_manager',
+    'get_config_manager',
     
     # Migration (Phase 7.3)
     'ConfigMigrator',

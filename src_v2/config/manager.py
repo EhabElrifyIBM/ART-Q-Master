@@ -14,6 +14,11 @@ from .schema import Configuration
 from .validator import ConfigValidator, ValidationError
 
 
+def _default_config_path() -> Path:
+    """Resolve to src_v2/config.json regardless of cwd."""
+    return Path(__file__).parent.parent / "config.json"
+
+
 class ConfigManager:
     """
     Singleton configuration manager with thread-safe operations.
@@ -43,37 +48,24 @@ class ConfigManager:
         self._operation_lock = threading.RLock()
         self._initialized = True
     
-    def load(self, config_path: str = "config.json") -> bool:
-        """
-        Load configuration from file with validation.
-        
-        Args:
-            config_path: Path to configuration file
-            
-        Returns:
-            True if loaded successfully, False otherwise
-        """
+    def load(self, config_path: Optional[str] = None) -> bool:
+        """Load configuration from file. Defaults to src_v2/config.json."""
         with self._operation_lock:
             try:
-                path = Path(config_path)
+                path = Path(config_path) if config_path else _default_config_path()
                 self._config_path = path
-                
+
                 if not path.exists():
-                    # Create default config
                     self._config = self._create_default_config()
                     self.save()
                     return True
-                
-                # Load and validate
+
                 with open(path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                
-                # Store as dict (validation will be done on Configuration objects when needed)
-                self._config = data
+                    self._config = json.load(f)
                 return True
-                
+
             except Exception as e:
-                print(f"Error loading configuration: {e}")
+                print(f"[ConfigManager] Error loading configuration: {e}")
                 return False
     
     def _dict_to_config(self, data: Dict[str, Any]) -> Optional[Configuration]:
@@ -273,41 +265,29 @@ class ConfigManager:
     def _create_default_config(self) -> Dict[str, Any]:
         """Create default configuration structure."""
         return {
-            "agent_name": "",
-            "cache_directory": "./cache",
+            "agent_settings": {
+                "agent_name": "",
+                "user_id": "",
+                "password": "",
+                "place_id": ""
+            },
+            "file_paths": {
+                "excel_base_path": "",
+                "cache_directory": ""
+            },
+            "crm_settings": {
+                "excel_sheet_name": ""
+            },
+            "execution_settings": {
+                "start_time": "",
+                "end_time": "",
+                "refresh_interval": 10
+            },
             "ui_settings": {
-                "theme": "auto",
-                "font_size": 20,
+                "theme_mode": "light",
+                "font_preset": "normal",
                 "high_contrast": False,
-                "animations_enabled": True,
-                "compact_mode": False
-            },
-            "automation": {
-                "refresh_interval": 300,
-                "auto_screenshot": True,
-                "screenshot_directory": "./screenshots",
-                "max_retries": 3,
-                "retry_delay": 5,
-                "timeout": 30
-            },
-            "accessibility": {
-                "screen_reader_support": False,
-                "keyboard_navigation": True,
-                "focus_indicators": True,
-                "reduced_motion": False
-            },
-            "advanced": {
-                "debug_mode": False,
-                "log_level": "INFO",
-                "log_directory": "./logs",
-                "backup_enabled": True,
-                "backup_count": 5,
-                "auto_save": True,
-                "auto_save_interval": 60
-            },
-            "credentials": {
-                "username": "",
-                "password": ""
+                "animations_enabled": True
             }
         }
     
@@ -369,7 +349,13 @@ class ConfigManager:
                 return False
 
 
-# Global instance
-config_manager = ConfigManager()
+_config_manager_instance: Optional[ConfigManager] = None
 
-# Made with Bob
+
+def get_config_manager() -> ConfigManager:
+    """Return the loaded singleton ConfigManager. Safe to call at any time."""
+    global _config_manager_instance
+    if _config_manager_instance is None:
+        _config_manager_instance = ConfigManager()
+        _config_manager_instance.load()
+    return _config_manager_instance
