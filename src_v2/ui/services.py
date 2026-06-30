@@ -398,7 +398,6 @@ class V2ThemeService:
             border: 2px solid {colors['accent']};
             border-radius: 12px;
             padding: 12px 20px;
-            font-size: {button_size}px;
             font-size: {font_size}px;
             font-weight: 700;
             min-width: 150px;

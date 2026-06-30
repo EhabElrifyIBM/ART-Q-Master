@@ -459,6 +459,7 @@ class UnifiedToolShell(QMainWindow):
         
         # Grid layout for enhanced cards (2 columns)
         grid_layout = QGridLayout()
+        self._tools_grid = grid_layout
         grid_layout.setSpacing(16)
         grid_layout.setContentsMargins(0, 0, 0, 0)
         
@@ -530,11 +531,11 @@ class UnifiedToolShell(QMainWindow):
         )
 
     def _sign_out(self):
-        """Handle sign out action."""
+        """Handle exit action."""
         reply = QMessageBox.question(
             self,
-            "Sign Out",
-            "Are you sure you want to sign out?",
+            "Exit",
+            "Are you sure you want to exit?",
             QMessageBox.Yes | QMessageBox.No
         )
         if reply == QMessageBox.Yes:

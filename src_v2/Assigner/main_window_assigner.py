@@ -25,6 +25,8 @@ try:
 except ImportError:
     from assigner_processor import FileProcessor
 
+_HANDLERS_CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "handlers_cache.json")
+
 # Qt constants for alignment and item flags
 class Alignment:
     def __init__(self):
@@ -1988,7 +1990,7 @@ class MainWindow(QMainWindow, V2TypographyMixin):
             "current_handlers": self.current_handlers
         }
         try:
-            with open('handlers_cache.json', 'w') as f:
+            with open(_HANDLERS_CACHE, 'w') as f:
                 json.dump(handlers_data, f)
         except Exception as e:
             self.add_log(f"Error saving handlers: {str(e)}")
@@ -1996,7 +1998,7 @@ class MainWindow(QMainWindow, V2TypographyMixin):
     def load_handlers(self):
         """Load handlers from JSON file"""
         try:
-            with open('handlers_cache.json', 'r') as f:
+            with open(_HANDLERS_CACHE, 'r') as f:
                 handlers_data = json.load(f)
                 # Load handlers from saved file
                 self.handlers = handlers_data.get('handlers', ["Adam", "Ehab", "Teama", "Ibrahim", "Moamen"])

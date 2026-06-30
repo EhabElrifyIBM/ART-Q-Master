@@ -155,7 +155,7 @@ def _get_v2_file_map() -> Dict[str, str]:
     paths = get_runtime_paths()
     return {
         "assigner":       os.path.join(paths.src_v2_root, "Assigner", "main_window_assigner.py"),
-        "merger":         os.path.join(paths.src_v2_root, "Merger", "Merger.py"),
+        "merger":         os.path.join(paths.src_v2_root, "Merger", "run_merger.py"),
         "archiver":       os.path.join(paths.src_v2_root, "Archiver", "run_archiver.py"),
         "qcontrol":       os.path.join(paths.art_q_control_dir, "Dispatcher_v2.py"),
         "reachrate":      os.path.join(paths.src_v2_root, "Reach Rate Calculator", "ReachRateCalculatorUI_v2.py"),
@@ -184,6 +184,8 @@ def _build_launch_command(tool_id: str) -> list:
         return [sys.executable, "-m", "DailyMerger.run_daily_merger"]
     if tool_id == "monthly_merger":
         return [sys.executable, "-m", "MonthlyMerger.run_monthly_merger"]
+    if tool_id == "merger":
+        return [sys.executable, "-m", "Merger.run_merger"]
     return [sys.executable, target]
 
 
