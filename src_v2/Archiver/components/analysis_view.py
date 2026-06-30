@@ -45,6 +45,7 @@ class _StatCard(QFrame):
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
+        self.setObjectName("statCard")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(Spacing.MD, Spacing.SM, Spacing.MD, Spacing.SM)
         layout.setSpacing(2)
@@ -74,7 +75,7 @@ class _StatCard(QFrame):
     def _apply_style(self, theme_mode: str) -> None:
         colors = Colors.LIGHT if theme_mode == "light" else Colors.DARK
         self.setStyleSheet(f"""
-            QFrame {{
+            QFrame#statCard {{
                 background-color: {colors['surface']};
                 border: 1px solid {colors['border']};
                 border-radius: {BorderRadius.MD}px;

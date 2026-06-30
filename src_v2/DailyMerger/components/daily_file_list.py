@@ -74,9 +74,7 @@ class DailyFileListWidget(QWidget):
         # ── ZIP toggle ────────────────────────────────────────────────
         zip_row = QHBoxLayout()
         zip_row.setSpacing(Spacing.SM)
-        self._zip_toggle = QCheckBox(
-            "📦  Accept ZIP files (containing a daily .xlsx workbook)", self
-        )
+        self._zip_toggle = QCheckBox("📦  Accept ZIP files", self)
         self._zip_toggle.setChecked(True)
         self._zip_toggle.setFont(self._typography.create_font("body_sm"))
         self._zip_toggle.setToolTip(
@@ -91,6 +89,7 @@ class DailyFileListWidget(QWidget):
 
         # ── Drop zone ─────────────────────────────────────────────────
         self._drop_zone = QFrame(self)
+        self._drop_zone.setObjectName("dropZone")
         self._drop_zone.setAcceptDrops(True)
         self._drop_zone.setMinimumHeight(200)
         self._drop_zone.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -112,6 +111,7 @@ class DailyFileListWidget(QWidget):
             "Drag & Drop Daily Files Here", self._drop_zone
         )
         self._dz_title.setAlignment(Qt.AlignCenter)
+        self._dz_title.setWordWrap(True)
         self._dz_title.setFont(self._typography.create_font("h3"))
         dz_layout.addWidget(self._dz_title)
 
@@ -326,13 +326,16 @@ class DailyFileListWidget(QWidget):
         text     = colors["text_primary"]
         text_sec = colors["text_secondary"]
 
+        # Scoped to #dropZone — QLabel is a QFrame subclass, so an unscoped
+        # "QFrame {...}" selector would also paint a border/background on every
+        # child label nested inside this frame.
         self._drop_zone.setStyleSheet(f"""
-            QFrame {{
+            QFrame#dropZone {{
                 background-color: {surface};
                 border: 2px dashed {border};
                 border-radius: {BorderRadius.LG}px;
             }}
-            QFrame:hover {{
+            QFrame#dropZone:hover {{
                 border-color: {primary};
                 background-color: {hover_bg};
             }}
@@ -344,7 +347,7 @@ class DailyFileListWidget(QWidget):
     def _apply_drop_active_style(self) -> None:
         colors = Colors.LIGHT if self._theme_mode == "light" else Colors.DARK
         self._drop_zone.setStyleSheet(f"""
-            QFrame {{
+            QFrame#dropZone {{
                 background-color: {colors['info_bg']};
                 border: 2px solid {colors['primary']};
                 border-radius: {BorderRadius.LG}px;

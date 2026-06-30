@@ -390,6 +390,7 @@ class DailyMergerWindow(QMainWindow, V2TypographyMixin):
 
         # Header row: title + clear + toggle
         log_header = QFrame(self._log_panel)
+        log_header.setObjectName("logHeader")
         log_header_layout = QHBoxLayout(log_header)
         log_header_layout.setContentsMargins(Spacing.SM, Spacing.XS, Spacing.SM, Spacing.XS)
         log_header_layout.setSpacing(Spacing.SM)
@@ -866,8 +867,11 @@ class DailyMergerWindow(QMainWindow, V2TypographyMixin):
         """)
         # Keep INFO-level (unstyled) text matching the theme
         self._log_default_text_color = text
+        # QFrame#logHeader scopes the border/background to the header frame only
+        # — QLabel is a QFrame subclass, so an unscoped "QFrame {...}" selector
+        # would also paint this border/background onto the title label inside it.
         log_header_style = f"""
-            QFrame {{
+            QFrame#logHeader {{
                 background-color: {surface};
                 border: 1px solid {border};
                 border-bottom: none;

@@ -143,6 +143,7 @@ class SheetSelectorWidget(QWidget, V2TypographyMixin):
         layout.addWidget(self.subtitle_label)
 
         self.card = QFrame()
+        self.card.setObjectName("sheetSelectorCard")
         card_layout = QVBoxLayout(self.card)
         card_layout.setContentsMargins(Spacing.MD, Spacing.MD, Spacing.MD, Spacing.MD)
         card_layout.setSpacing(Spacing.SM)
@@ -166,7 +167,7 @@ class SheetSelectorWidget(QWidget, V2TypographyMixin):
         colors = Colors.DARK if self._theme_mode == "dark" else Colors.LIGHT
         self.card.setStyleSheet(
             f"""
-            QFrame {{
+            QFrame#sheetSelectorCard {{
                 background-color: {colors['background']};
                 border: 1px solid {colors['border']};
                 border-radius: {BorderRadius.LG}px;

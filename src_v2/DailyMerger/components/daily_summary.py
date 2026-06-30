@@ -77,6 +77,7 @@ class DailySummaryWidget(QWidget):
 
         # ── Skipped-month alert (danger, always shown prominently) ────
         self._skip_frame = QFrame(self)
+        self._skip_frame.setObjectName("skipFrame")
         skip_layout = QVBoxLayout(self._skip_frame)
         skip_layout.setContentsMargins(Spacing.MD, Spacing.SM, Spacing.MD, Spacing.SM)
         self._skip_label = QLabel("", self._skip_frame)
@@ -88,6 +89,7 @@ class DailySummaryWidget(QWidget):
 
         # ── Warning banner (missing sheets) ──────────────────────────
         self._warning_frame = QFrame(self)
+        self._warning_frame.setObjectName("warningFrame")
         warn_layout = QVBoxLayout(self._warning_frame)
         warn_layout.setContentsMargins(Spacing.MD, Spacing.SM, Spacing.MD, Spacing.SM)
         self._warning_label = QLabel("", self._warning_frame)
@@ -102,9 +104,14 @@ class DailySummaryWidget(QWidget):
         self._table = QTableWidget(0, 7, self)
         self._table.setHorizontalHeaderLabels([
             "Filename", "Source", "Date",
-            "Handler Sheets", "Chat Agent", "Companies", "Status",
+            "Handlers", "Chat", "Companies", "Status",
         ])
         hdr = self._table.horizontalHeader()
+        # Filename stretches to fill remaining space; the rest size to fit
+        # their (now-shortened) header text via ResizeToContents. The previous
+        # full-length headers ("Handler Sheets", "Chat Agent", ...) summed to
+        # more width than the panel had, forcing a horizontal scrollbar that
+        # clipped every column; shorter labels remove that overflow.
         hdr.setSectionResizeMode(0, QHeaderView.Stretch)           # Filename
         hdr.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # Source
         hdr.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # Date
@@ -350,9 +357,11 @@ class DailySummaryWidget(QWidget):
         warn_bg  = colors.get("warning_bg", "#fdf3c8")
         danger   = colors.get("danger", "#da1e28")
 
-        # Skipped-month danger frame
+        # Skipped-month danger frame (selectors scoped to #skipFrame/#warningFrame
+        # — QLabel is a QFrame subclass, so an unscoped "QFrame {...}" selector
+        # would also paint a border/background on the labels nested inside)
         self._skip_frame.setStyleSheet(f"""
-            QFrame {{
+            QFrame#skipFrame {{
                 background-color: {colors.get('danger_bg', '#fff1f1')};
                 border: 2px solid {danger};
                 border-radius: {BorderRadius.MD}px;
@@ -363,7 +372,7 @@ class DailySummaryWidget(QWidget):
         )
 
         self._warning_frame.setStyleSheet(f"""
-            QFrame {{
+            QFrame#warningFrame {{
                 background-color: {warn_bg};
                 border: 1px solid {colors.get('warning', '#f1c21b')};
                 border-radius: {BorderRadius.MD}px;

@@ -55,6 +55,7 @@ class ColumnMapperWidget(QWidget, V2TypographyMixin):
         layout.addWidget(self.subtitle_label)
 
         self.header_card = QFrame()
+        self.header_card.setObjectName("headerCard")
         header_layout = QHBoxLayout(self.header_card)
         header_layout.setContentsMargins(Spacing.MD, Spacing.MD, Spacing.MD, Spacing.MD)
         header_layout.setSpacing(Spacing.MD)
@@ -76,6 +77,7 @@ class ColumnMapperWidget(QWidget, V2TypographyMixin):
         layout.addWidget(self.header_card)
 
         self.content_card = QFrame()
+        self.content_card.setObjectName("contentCard")
         mapping_layout = QHBoxLayout(self.content_card)
         mapping_layout.setContentsMargins(Spacing.MD, Spacing.MD, Spacing.MD, Spacing.MD)
         mapping_layout.setSpacing(Spacing.MD)
@@ -119,8 +121,11 @@ class ColumnMapperWidget(QWidget, V2TypographyMixin):
     def _apply_styles(self):
         """Apply theme-aware styling."""
         colors = Colors.DARK if self._theme_mode == "dark" else Colors.LIGHT
+        # Scoped to the two known card frames — QLabel is a QFrame subclass, so an
+        # unscoped "QFrame {...}" selector would also paint a border/background on
+        # every label nested inside these cards.
         card_style = f"""
-            QFrame {{
+            QFrame#headerCard, QFrame#contentCard {{
                 background-color: {colors['surface']};
                 border: 1px solid {colors['border']};
                 border-radius: {BorderRadius.LG}px;

@@ -73,6 +73,7 @@ class FileListWidget(QWidget):
         
         # Drop zone
         self._drop_zone = QFrame(self)
+        self._drop_zone.setObjectName("dropZone")
         self._drop_zone.setAcceptDrops(True)
         self._drop_zone.setMinimumHeight(120)
         self._drop_zone.dragEnterEvent = self._on_drag_enter
@@ -164,14 +165,16 @@ class FileListWidget(QWidget):
         hover_bg = colors['surface_hover']
         primary = colors['primary']
 
-        # Drop zone styles
+        # Drop zone styles (scoped to #dropZone only — QLabel is a QFrame subclass,
+        # so an unscoped "QFrame {...}" selector would also paint a border/background
+        # on every child label inside this frame)
         self._drop_zone.setStyleSheet(f"""
-            QFrame {{
+            QFrame#dropZone {{
                 background-color: {bg_color};
                 border: 2px dashed {border_color};
                 border-radius: {BorderRadius.MD}px;
             }}
-            QFrame:hover {{
+            QFrame#dropZone:hover {{
                 border-color: {primary};
             }}
         """)
@@ -240,7 +243,7 @@ class FileListWidget(QWidget):
                     # Visual feedback
                     _c = Colors.DARK if self._theme_mode == "dark" else Colors.LIGHT
                     self._drop_zone.setStyleSheet(f"""
-                        QFrame {{
+                        QFrame#dropZone {{
                             background-color: {_c['surface_hover']};
                             border: 2px solid {_c['primary']};
                             border-radius: {BorderRadius.MD}px;

@@ -66,6 +66,7 @@ class FileSelectorWidget(QWidget):
 
         # ── Drop zone ────────────────────────────────────────────────
         self._drop_zone = QFrame(self)
+        self._drop_zone.setObjectName("dropZone")
         self._drop_zone.setAcceptDrops(True)
         self._drop_zone.setMinimumHeight(160)
         self._drop_zone.dragEnterEvent = self._on_drag_enter
@@ -105,6 +106,7 @@ class FileSelectorWidget(QWidget):
 
         # ── Selected file info ────────────────────────────────────────
         self._file_info_frame = QFrame(self)
+        self._file_info_frame.setObjectName("fileInfoFrame")
         file_info_layout = QVBoxLayout(self._file_info_frame)
         file_info_layout.setContentsMargins(Spacing.SM, Spacing.SM, Spacing.SM, Spacing.SM)
         file_info_layout.setSpacing(2)
@@ -150,20 +152,23 @@ class FileSelectorWidget(QWidget):
         primary = colors["primary"]
         surface = colors["surface"]
 
+        # Scoped to #dropZone / #fileInfoFrame — QLabel is a QFrame subclass, so an
+        # unscoped "QFrame {...}" selector would also paint a border/background on
+        # every child label nested inside these frames.
         self._drop_zone.setStyleSheet(f"""
-            QFrame {{
+            QFrame#dropZone {{
                 background-color: {surface};
                 border: 2px dashed {border};
                 border-radius: {BorderRadius.LG}px;
             }}
-            QFrame:hover {{
+            QFrame#dropZone:hover {{
                 border-color: {primary};
                 background-color: {hover_bg};
             }}
         """)
 
         self._file_info_frame.setStyleSheet(f"""
-            QFrame {{
+            QFrame#fileInfoFrame {{
                 background-color: {bg};
                 border: 1px solid {border};
                 border-radius: {BorderRadius.MD}px;
@@ -198,7 +203,7 @@ class FileSelectorWidget(QWidget):
     def _apply_drag_active_style(self) -> None:
         colors = Colors.LIGHT if self._theme_mode == "light" else Colors.DARK
         self._drop_zone.setStyleSheet(f"""
-            QFrame {{
+            QFrame#dropZone {{
                 background-color: {colors['info_bg']};
                 border: 2px solid {colors['primary']};
                 border-radius: {BorderRadius.LG}px;

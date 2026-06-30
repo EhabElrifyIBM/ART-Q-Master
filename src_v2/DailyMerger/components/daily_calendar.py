@@ -59,6 +59,7 @@ class _MonthGrid(QFrame):
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
+        self.setObjectName("monthGrid")
         self._year       = year
         self._month      = month
         self._marked     = marked_days
@@ -146,9 +147,11 @@ class _MonthGrid(QFrame):
         success = colors["success"]
         success_bg = colors["success_bg"]
 
-        # Frame border
+        # Frame border (scoped to #monthGrid — QLabel day cells are QFrame
+        # subclasses too, so an unscoped "QFrame {...}" selector would also
+        # paint this border/background onto every day cell)
         self.setStyleSheet(f"""
-            QFrame {{
+            QFrame#monthGrid {{
                 background-color: {surface};
                 border: 1px solid {border};
                 border-radius: {BorderRadius.MD}px;
@@ -260,18 +263,23 @@ class DailyCalendarWidget(QWidget):
         root.addLayout(hdr)
 
         # ── Scroll area containing month grids side by side ───────────
+        # Height grows to fit loaded month grids; collapses to a compact strip
+        # when empty so it doesn't leave a large blank void (see _update_scroll_height).
+        self._empty_height = 70
+        self._loaded_height = 230
+
         self._scroll = QScrollArea(self)
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QFrame.NoFrame)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self._scroll.setFixedHeight(230)
+        self._scroll.setFixedHeight(self._empty_height)
 
         self._inner = QWidget()
         self._inner_layout = QHBoxLayout(self._inner)
         self._inner_layout.setContentsMargins(0, 0, 0, 0)
         self._inner_layout.setSpacing(Spacing.MD)
-        self._inner_layout.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self._inner_layout.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
         self._placeholder = QLabel(
             "Load daily files to see coverage calendar…", self._inner
@@ -303,6 +311,7 @@ class DailyCalendarWidget(QWidget):
         self._clear_grids()
         self._placeholder.setVisible(True)
         self._legend_loaded.setText("")
+        self._scroll.setFixedHeight(self._empty_height)
 
     def set_theme_mode(self, mode: str) -> None:
         self._theme_mode = mode
@@ -332,9 +341,11 @@ class DailyCalendarWidget(QWidget):
         if not month_days:
             self._placeholder.setVisible(True)
             self._legend_loaded.setText("")
+            self._scroll.setFixedHeight(self._empty_height)
             return
 
         self._placeholder.setVisible(False)
+        self._scroll.setFixedHeight(self._loaded_height)
 
         year = self._current_year
         total_marked = sum(len(v) for v in month_days.values())

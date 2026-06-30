@@ -195,15 +195,18 @@ class BaseCard(QFrame):
         Override in subclasses to customize appearance.
         """
         colors = Colors.LIGHT if self._theme_mode == "light" else Colors.DARK
-        
+
+        # Scoped to BaseCard (matches BaseCard and its subclasses only) — QLabel
+        # is a QFrame subclass too, so a bare "QFrame {...}" selector would also
+        # paint this border/background onto every label nested inside the card.
         self.setStyleSheet(f"""
-            QFrame {{
+            BaseCard {{
                 background-color: {colors['surface']};
                 border: 1px solid {colors['border']};
                 border-radius: {BorderRadius.LG}px;
             }}
         """)
-        
+
         # Apply header style
         self._header_container.setStyleSheet(f"""
             QWidget {{
@@ -560,13 +563,13 @@ class Card(BaseCard):
         colors = Colors.LIGHT if self._theme_mode == "light" else Colors.DARK
         
         self.setStyleSheet(f"""
-            QFrame {{
+            BaseCard {{
                 background-color: {colors['surface']};
                 border: 1px solid {colors['border']};
                 border-radius: {BorderRadius.LG}px;
             }}
         """)
-        
+
         # Apply container styles
         super()._apply_style()
 
@@ -593,7 +596,7 @@ class ElevatedCard(BaseCard):
         # Note: QSS doesn't support box-shadow, so we use border styling
         # For true shadows, would need to use QPainter or platform-specific code
         self.setStyleSheet(f"""
-            QFrame {{
+            BaseCard {{
                 background-color: {colors['surface']};
                 border: 1px solid {colors['border_subtle']};
                 border-radius: {BorderRadius.LG}px;
@@ -634,13 +637,13 @@ class OutlinedCard(BaseCard):
         colors = Colors.LIGHT if self._theme_mode == "light" else Colors.DARK
         
         self.setStyleSheet(f"""
-            QFrame {{
+            BaseCard {{
                 background-color: transparent;
                 border: 2px solid {colors['border']};
                 border-radius: {BorderRadius.LG}px;
             }}
         """)
-        
+
         # Apply container styles
         super()._apply_style()
     
@@ -654,7 +657,7 @@ class OutlinedCard(BaseCard):
             border_color = colors['border']
         
         self.setStyleSheet(f"""
-            QFrame {{
+            BaseCard {{
                 background-color: transparent;
                 border: 2px solid {border_color};
                 border-radius: {BorderRadius.LG}px;
@@ -758,14 +761,17 @@ class CompactToolCard(QFrame):
         # Use white/dark background for maximum contrast with parent surface
         card_bg = colors['background']  # White in light mode, dark in dark mode
         
+        # Scoped to CompactToolCard — QLabel is a QFrame subclass, so a bare
+        # "QFrame {...}" selector would also paint this border/background onto
+        # the icon and name labels nested inside.
         self.setStyleSheet(f"""
-            QFrame {{
+            CompactToolCard {{
                 background-color: {card_bg};
                 border: 1px solid {colors['border']};
                 border-radius: {BorderRadius.MD}px;
             }}
-            
-            QFrame:hover {{
+
+            CompactToolCard:hover {{
                 background-color: {colors['surface_hover']};
                 border-color: {colors['primary']};
             }}

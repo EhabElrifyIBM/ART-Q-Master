@@ -53,6 +53,7 @@ class PreviewDialog(QDialog, V2TypographyMixin):
         layout.addWidget(self.stats_label)
 
         self.card = QFrame()
+        self.card.setObjectName("previewCard")
         card_layout = QVBoxLayout(self.card)
         card_layout.setContentsMargins(Spacing.MD, Spacing.MD, Spacing.MD, Spacing.MD)
         card_layout.setSpacing(Spacing.MD)
@@ -91,7 +92,7 @@ class PreviewDialog(QDialog, V2TypographyMixin):
         )
         self.card.setStyleSheet(
             f"""
-            QFrame {{
+            QFrame#previewCard {{
                 background-color: {colors['surface']};
                 border: 1px solid {colors['border']};
                 border-radius: {BorderRadius.LG}px;

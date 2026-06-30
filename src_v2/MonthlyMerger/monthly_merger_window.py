@@ -356,6 +356,7 @@ class MonthlyMergerWindow(QMainWindow, V2TypographyMixin):
         log_outer.setSpacing(0)
 
         log_header = QFrame(self._log_panel)
+        log_header.setObjectName("logHeader")
         log_hl = QHBoxLayout(log_header)
         log_hl.setContentsMargins(Spacing.SM, Spacing.XS, Spacing.SM, Spacing.XS)
         log_hl.setSpacing(Spacing.SM)
@@ -392,6 +393,7 @@ class MonthlyMergerWindow(QMainWindow, V2TypographyMixin):
 
     def _build_drop_zone(self, parent: QWidget) -> QFrame:
         frame = QFrame(parent)
+        frame.setObjectName("dropZone")
         frame.setAcceptDrops(True)
         frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         frame.dragEnterEvent = self._dz_drag_enter
@@ -410,6 +412,7 @@ class MonthlyMergerWindow(QMainWindow, V2TypographyMixin):
 
         self._dz_title = QLabel("Drop Monthly Merged Files Here", frame)
         self._dz_title.setAlignment(Qt.AlignCenter)
+        self._dz_title.setWordWrap(True)
         self._dz_title.setFont(TypographySystem().create_font("h3"))
         layout.addWidget(self._dz_title)
 
@@ -821,7 +824,7 @@ class MonthlyMergerWindow(QMainWindow, V2TypographyMixin):
         header_w = self._log_panel.layout().itemAt(0).widget()
         if header_w:
             header_w.setStyleSheet(f"""
-                QFrame {{ background-color: {surface}; border: 1px solid {border};
+                QFrame#logHeader {{ background-color: {surface}; border: 1px solid {border};
                           border-bottom: none; border-radius: 4px 4px 0 0; }}
                 QLabel {{ color: {text}; }}
                 QPushButton {{ background-color: {surface}; color: {text_s};
@@ -830,12 +833,12 @@ class MonthlyMergerWindow(QMainWindow, V2TypographyMixin):
             """)
 
         self._drop_frame.setStyleSheet(f"""
-            QFrame {{
+            QFrame#dropZone {{
                 background-color: {surface};
                 border: 2px dashed {border};
                 border-radius: {BorderRadius.LG}px;
             }}
-            QFrame:hover {{
+            QFrame#dropZone:hover {{
                 border-color: {primary};
                 background-color: {hover_bg};
             }}
@@ -865,7 +868,7 @@ class MonthlyMergerWindow(QMainWindow, V2TypographyMixin):
         colors = Colors.LIGHT if self._theme_mode == "light" else Colors.DARK
         if active:
             self._drop_frame.setStyleSheet(f"""
-                QFrame {{ background-color: {colors['info_bg']};
+                QFrame#dropZone {{ background-color: {colors['info_bg']};
                           border: 2px solid {colors['primary']};
                           border-radius: {BorderRadius.LG}px; }}
             """)
