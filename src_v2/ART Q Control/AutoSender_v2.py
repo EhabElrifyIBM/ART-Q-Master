@@ -1475,7 +1475,7 @@ def run_auto_sender(excel_path=None, support_agents=None, support_agent=None):
                 if search_box:
                     print("[INFO] CRM page loaded successfully - GlobalSearchBox found")
                     break
-            except:
+            except Exception:
                 pass
             time.sleep(1)
             if attempt % 5 == 0:

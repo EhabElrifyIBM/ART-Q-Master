@@ -19,6 +19,7 @@ import os
 import sys
 
 # Ensure both src_v2 and this directory are in path for proper imports
+# (path manipulation must happen before utils imports below)
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 SRC_V2_DIR = os.path.dirname(CURRENT_DIR)
 
@@ -26,6 +27,8 @@ if SRC_V2_DIR not in sys.path:
     sys.path.insert(0, SRC_V2_DIR)
 if CURRENT_DIR not in sys.path:
     sys.path.insert(0, CURRENT_DIR)
+
+from utils.error_logger import log
 
 # DO NOT import SharedFunctions at module level - lazy load after QApplication exists
 # DO NOT import AutoSender_v2 or CaseReviewer_v2 at module level - they have PyQt5 imports!
@@ -755,9 +758,9 @@ def show_mode_selector():
                 support_agents = [single]
 
         if support_agents:
-            print(f"[INFO] Support mode enabled for: {', '.join(support_agents)}")
+            log("info", f"Support mode enabled for: {', '.join(support_agents)}", "Dispatcher")
         else:
-            print("[INFO] Support checkbox was checked but no agent name entered — running in own-agent mode")
+            log("info", "Support checkbox was checked but no agent name entered — running in own-agent mode", "Dispatcher")
 
     # Backward-compat: expose the first name (or None) as a single value
     support_agent = support_agents[0] if support_agents else None
@@ -790,45 +793,45 @@ def main():
     print(f"[DEBUG] show_mode_selector() returned: result={result}, support_agents={support_agents}")
 
     if result == 1:  # Auto Sender
-        print("[INFO] Starting Auto Sender mode...")
+        log("info", "Starting Auto Sender mode...", "Dispatcher")
         from AutoSender_v2 import run_auto_sender
         run_auto_sender(support_agents=support_agents)
         main()
 
     elif result == 2:  # Case Reviewer
-        print("[INFO] Starting Case Reviewer mode...")
+        log("info", "Starting Case Reviewer mode...", "Dispatcher")
         from CaseReviewer_v2 import run_case_reviewer
         run_case_reviewer(support_agents=support_agents)
         main()
 
     elif result == 5:  # Companies Process
-        print("[INFO] Starting Companies Process mode...")
+        log("info", "Starting Companies Process mode...", "Dispatcher")
         from CompaniesProcess_v2 import run_companies_process_standalone
         run_companies_process_standalone(support_agents=support_agents)
         main()
-        
+
     elif result == 3:  # Update Configuration
-        print("[INFO] Opening configuration setup...")
+        log("info", "Opening configuration setup...", "Dispatcher")
         from config_loader import ConfigSetupDialog
         from PyQt5.QtWidgets import QDialog
         # Load config again to get CONFIG_MANAGER
         config = _get_config_values()
         dialog = ConfigSetupDialog(config['config_manager'])
-        
+
         if dialog.exec_() == QDialog.Accepted:
-            print("[INFO] Configuration updated successfully")
+            log("info", "Configuration updated successfully", "Dispatcher")
             # After config update, return to mode selector
             main()
         else:
-            print("[INFO] Configuration update cancelled")
-        
+            log("info", "Configuration update cancelled", "Dispatcher")
+
     elif result == 4:  # Main Menu
-        print("[INFO] Returning to main menu...")
+        log("info", "Returning to main menu...", "Dispatcher")
         # Return to main menu (handled by caller)
         return
-        
+
     else:
-        print("[INFO] Exiting ART Q Control.")
+        log("info", "Exiting ART Q Control.", "Dispatcher")
 
 
 if __name__ == "__main__":

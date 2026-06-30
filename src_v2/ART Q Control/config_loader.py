@@ -194,7 +194,7 @@ def ConfigSetupDialog(config_manager):
             self.current_config = None
             try:
                 self.current_config = config_manager.load_config()
-            except:
+            except Exception:
                 pass  # Config doesn't exist yet
             
             self.init_ui()
@@ -314,7 +314,7 @@ def ConfigSetupDialog(config_manager):
             if interval:
                 try:
                     self.refresh_interval_input.setValue(int(interval))
-                except:
+                except (ValueError, TypeError):
                     self.refresh_interval_input.setValue(10)
             else:
                 self.refresh_interval_input.setValue(10)
@@ -500,7 +500,7 @@ def ConfigSetupDialog(config_manager):
                 if hide and isinstance(value, str):
                     return "••• (unchanged)"
                 return str(value) if value else ""
-            except:
+            except (KeyError, TypeError):
                 return ""
         
         def browse_excel_path(self):
