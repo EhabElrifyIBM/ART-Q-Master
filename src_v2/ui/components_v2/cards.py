@@ -53,7 +53,7 @@ Usage:
 """
 
 from typing import Optional, Callable
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal
+from PyQt5.QtCore import Qt, QTimer, QRect, pyqtSignal
 from PyQt5.QtGui import QFont, QPainter, QColor, QLinearGradient, QPaintEvent
 from PyQt5.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QWidget,
@@ -914,33 +914,43 @@ class EnhancedToolCard(QFrame):
         self._launch_button = GhostButton("Launch →")
         self._launch_button.clicked.connect(lambda: self.clicked.emit(self._tool_id))
 
-        # Add to main layout
+        # Add to main layout (no stretch — the card is fixed-height, sized to its content)
         layout.addLayout(header_layout)
-        layout.addWidget(self._description_label, 1)
+        layout.addWidget(self._description_label)
         layout.addWidget(self._launch_button)
 
-        # Reserve enough vertical room for a 3-line description so QGridLayout
-        # (which handles height-for-width widgets unreliably) never clips the text.
+        # Size the card to fit its actual description text — no more, no less —
+        # so short descriptions don't leave a block of dead space below them.
         self._reserve_description_height()
 
-        # Set minimum size and size policy
+        # Set minimum width and size policy. Vertical is Fixed: the card's height comes
+        # entirely from _reserve_description_height(), not from the grid stretching it.
         self.setMinimumWidth(300)
         from PyQt5.QtWidgets import QSizePolicy
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         # Enable mouse tracking for hover
         self.setMouseTracking(True)
 
     def _reserve_description_height(self) -> None:
-        """Fix the description label's minimum height to 3 lines and resize the card to fit."""
-        line_height = self._description_label.fontMetrics().height()
-        self._description_label.setMinimumHeight(line_height * 3)
+        """Fix the card's height to fit the actual description text (clamped to 1-3 lines)."""
+        metrics = self._description_label.fontMetrics()
+        available_width = max(self.minimumWidth() - (Spacing.CARD_PADDING * 2), 100)
+        bounds = metrics.boundingRect(
+            QRect(0, 0, available_width, 0),
+            Qt.TextFlag.TextWordWrap,
+            self._description,
+        )
+        line_height = metrics.height()
+        text_height = max(line_height, min(bounds.height(), line_height * 3))
+        self._description_label.setFixedHeight(text_height)
+
         header_height = 32  # icon size
         button_height = self._launch_button.sizeHint().height()
         spacing_total = Spacing.SM * 2
         padding_total = Spacing.CARD_PADDING * 2
-        self.setMinimumHeight(
-            header_height + (line_height * 3) + button_height + spacing_total + padding_total
+        self.setFixedHeight(
+            header_height + text_height + button_height + spacing_total + padding_total
         )
 
     def hasHeightForWidth(self) -> bool:
