@@ -227,6 +227,7 @@ class UnifiedToolShell(QMainWindow):
         self._tools: List[ToolCard] = list(tools or [])
         self._tool_buttons: List[QPushButton] = []
         self._tool_cards: dict = {}  # Store cards for filtering
+        self._search_filter: str = ""  # Current search text, used to recompute card visibility after grid rebuilds
         self._settings_bus = get_v2_settings_bus()
         self._theme_service = V2ThemeService()
         self._tool_status_map = get_tool_status_map()
@@ -494,24 +495,20 @@ class UnifiedToolShell(QMainWindow):
         return section
 
 
+    def _card_matches_search(self, tool_id: str) -> bool:
+        """Return whether tool_id matches the current search filter (empty filter matches everything)."""
+        if not self._search_filter:
+            return True
+        tool_def = get_tool_definition(tool_id)
+        tool_name = tool_def.display_name.lower()
+        tool_desc = tool_def.description.lower()
+        return self._search_filter in tool_name or self._search_filter in tool_desc
+
     def _filter_tools(self, search_text: str):
         """Filter tools based on search text."""
-        search_lower = search_text.lower().strip()
-        
-        # If search is empty, show all cards
-        if not search_lower:
-            for card in self._tool_cards.values():
-                card.setVisible(True)
-            return
-        
-        # Hide/show cards based on search
+        self._search_filter = search_text.lower().strip()
         for tool_id, card in self._tool_cards.items():
-            tool_def = get_tool_definition(tool_id)
-            tool_name = tool_def.display_name.lower()
-            tool_desc = tool_def.description.lower()
-            
-            matches = search_lower in tool_name or search_lower in tool_desc
-            card.setVisible(matches)
+            card.setVisible(self._card_matches_search(tool_id))
 
     def _on_tool_launched(self, tool_id: str):
         """Handle tool launch and track in recent tools."""
@@ -612,18 +609,17 @@ class UnifiedToolShell(QMainWindow):
         if not hasattr(self, '_tools_grid') or not hasattr(self, '_tool_cards'):
             return
 
-        # Record visibility before touching the layout (isVisible() is unreliable mid-resize)
-        visibility = {tid: card.isVisible() for tid, card in self._tool_cards.items()}
-
-        # Remove items from the grid without reparenting — widget hierarchy stays intact
+        # Remove items from the grid without reparenting — widget hierarchy stays intact.
+        # Note: widget.isVisible() is unreliable here (False before the window is first
+        # shown), so visibility is derived from the search filter state, not read back
+        # from the widgets.
         while self._tools_grid.count():
             self._tools_grid.takeAt(0)
 
-        # Re-add ALL cards, then restore each card's visibility
         row, col = 0, 0
         for tool_id, card in self._tool_cards.items():
             self._tools_grid.addWidget(card, row, col)
-            card.setVisible(visibility.get(tool_id, True))
+            card.setVisible(self._card_matches_search(tool_id))
             col += 1
             if col >= columns:
                 col = 0
