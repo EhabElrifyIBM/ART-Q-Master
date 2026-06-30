@@ -734,11 +734,11 @@ def main():
     from utils.crash_handler import install_crash_handler, enable_qt_sigint_heartbeat
     install_crash_handler()
 
-    try:
-        QApplication.setAttribute(Qt.ApplicationAttribute.AA_EnableHighDpiScaling, True)
-        QApplication.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps, True)
-    except AttributeError:
-        pass  # Older Qt versions
+    # No explicit High-DPI attributes here — every other tool window in this
+    # suite (Merger, Archiver, DailyMerger, MonthlyMerger, the main shell)
+    # runs without opting into AA_EnableHighDpiScaling, so enabling it only
+    # here made this window render visibly larger/"zoomed in" relative to
+    # all the others when the OS has a display scale factor configured.
 
     app = QApplication.instance() or QApplication(sys.argv)
     enable_qt_sigint_heartbeat(app)
