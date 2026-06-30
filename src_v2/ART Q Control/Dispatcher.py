@@ -326,13 +326,13 @@ def launch_main_menu():
 def launch_config_update():
     """Launch configuration update dialog"""
     try:
-        from config_loader import ConfigSetupDialog
-        
+        from config_loader import create_config_setup_dialog
+
         app = QApplication.instance()
         if app is None:
             app = QApplication(sys.argv)
-        
-        config_dialog = ConfigSetupDialog(CONFIG_MANAGER)
+
+        config_dialog = create_config_setup_dialog(CONFIG_MANAGER)
         config_dialog.exec_()
         
         # After config update, show mode selector again

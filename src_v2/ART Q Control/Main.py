@@ -323,8 +323,8 @@ def show_welcome_dialog():
     
     if result == 2:  # Update config
         # Import and show config dialog
-        from config_loader import ConfigSetupDialog
-        config_dialog = ConfigSetupDialog(CONFIG_MANAGER)
+        from config_loader import create_config_setup_dialog
+        config_dialog = create_config_setup_dialog(CONFIG_MANAGER)
         config_dialog.exec_()
         # After config update, show welcome again
         return show_welcome_dialog()

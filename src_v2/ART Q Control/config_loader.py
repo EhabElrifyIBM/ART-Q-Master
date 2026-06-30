@@ -98,21 +98,6 @@ class ConfigManager:
         if not isinstance(refresh, int) or refresh <= 0:
             raise ValueError(f"refresh_interval must be positive integer, got: {refresh}")
     
-    @staticmethod
-    def _is_valid_time(time_str):
-        """Check if time string is in HH:MM format"""
-        try:
-            if ':' not in str(time_str):
-                return False
-            parts = str(time_str).split(':')
-            if len(parts) != 2:
-                return False
-            hour = int(parts[0])
-            minute = int(parts[1])
-            return 0 <= hour < 24 and 0 <= minute < 60
-        except (ValueError, AttributeError):
-            return False
-    
     def save_config(self, config_data):
         """
         Save configuration to file
@@ -158,9 +143,9 @@ class ConfigManager:
         return self.config_data[section][key]
 
 
-def ConfigSetupDialog(config_manager):
+def create_config_setup_dialog(config_manager):
     """
-    Factory function that creates ConfigSetupDialog class with lazy PyQt5 imports.
+    Factory that creates and returns a ConfigSetupDialog instance with lazy PyQt5 imports.
     This avoids QApplication errors by only importing PyQt5 when dialog is actually created.
     """
     # Lazy import PyQt5 - only when dialog is actually needed
@@ -632,7 +617,7 @@ def init_config():
         app = QApplication.instance()
         if app is None:
             app = QApplication(sys.argv)
-        dialog = ConfigSetupDialog(config_manager)
+        dialog = create_config_setup_dialog(config_manager)
         if dialog.exec_() != QDialog.Accepted:
             log("error", "Configuration setup cancelled. Exiting.", "ConfigLoader")
             sys.exit(1)

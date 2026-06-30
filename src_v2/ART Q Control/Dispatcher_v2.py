@@ -812,11 +812,11 @@ def main():
 
     elif result == 3:  # Update Configuration
         log("info", "Opening configuration setup...", "Dispatcher")
-        from config_loader import ConfigSetupDialog
+        from config_loader import create_config_setup_dialog
         from PyQt5.QtWidgets import QDialog
         # Load config again to get CONFIG_MANAGER
         config = _get_config_values()
-        dialog = ConfigSetupDialog(config['config_manager'])
+        dialog = create_config_setup_dialog(config['config_manager'])
 
         if dialog.exec_() == QDialog.Accepted:
             log("info", "Configuration updated successfully", "Dispatcher")

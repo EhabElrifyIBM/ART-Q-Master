@@ -473,18 +473,6 @@ class AccessibilityManager:
         }
 
 
-# Singleton instance
-_a11y_manager = None
-
-
-def get_accessibility_manager() -> AccessibilityManager:
-    """Get or create accessibility manager singleton."""
-    global _a11y_manager
-    if _a11y_manager is None:
-        _a11y_manager = AccessibilityManager()
-    return _a11y_manager
-
-
 # ============================================================================
 # WCAG Compliance Utilities
 # ============================================================================
