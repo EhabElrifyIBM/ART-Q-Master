@@ -611,25 +611,19 @@ class UnifiedToolShell(QMainWindow):
         """Reorganize grid to use specified number of columns."""
         if not hasattr(self, '_tools_grid') or not hasattr(self, '_tool_cards'):
             return
-        
-        # Collect all cards
-        cards = []
-        for tool_id in self._tool_cards:
-            card = self._tool_cards[tool_id]
-            if card.isVisible():  # Only reorganize visible cards
-                cards.append(card)
-        
-        # Clear grid
+
+        # Record visibility before touching the layout (isVisible() is unreliable mid-resize)
+        visibility = {tid: card.isVisible() for tid, card in self._tool_cards.items()}
+
+        # Remove items from the grid without reparenting — widget hierarchy stays intact
         while self._tools_grid.count():
-            item = self._tools_grid.takeAt(0)
-            if item.widget():
-                item.widget().setParent(None)
-        
-        # Re-add cards in new layout
-        row = 0
-        col = 0
-        for card in cards:
+            self._tools_grid.takeAt(0)
+
+        # Re-add ALL cards, then restore each card's visibility
+        row, col = 0, 0
+        for tool_id, card in self._tool_cards.items():
             self._tools_grid.addWidget(card, row, col)
+            card.setVisible(visibility.get(tool_id, True))
             col += 1
             if col >= columns:
                 col = 0
