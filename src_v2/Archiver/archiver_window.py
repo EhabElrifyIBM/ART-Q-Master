@@ -32,7 +32,7 @@ from PyQt5.QtGui import QKeySequence, QFont
 
 from ui.typography_mixin import V2TypographyMixin
 from ui.theme_manager import ThemeManager
-from ui.services import V2SettingsBus
+from ui.services import get_v2_settings_bus
 from ui.design_system import Colors, Spacing, BorderRadius
 from ui.typography import TypographySystem
 from ui.components_v2.buttons import PrimaryButton, SecondaryButton
@@ -121,7 +121,7 @@ class ArchiverWindow(QMainWindow, V2TypographyMixin):
         V2TypographyMixin.__init__(self)
 
         self.theme_manager = ThemeManager()
-        self.settings_bus = V2SettingsBus()
+        self.settings_bus = get_v2_settings_bus()
         self.service = ArchiverService()
         self.current_analysis: Optional[Dict] = None
         self.worker: Optional[ArchiveWorker] = None

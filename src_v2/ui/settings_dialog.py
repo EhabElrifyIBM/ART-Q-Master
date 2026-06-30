@@ -23,6 +23,7 @@ from PyQt5.QtGui import QFont
 
 # Typography system imports
 from ui.typography import TypographySystem, FontSizePreset
+from utils.error_logger import log
 
 # Lazy imports to avoid QApplication issues
 theme_manager = None
@@ -316,9 +317,9 @@ class SettingsDialog(QDialog):
                 self.current_theme = new_theme
                 self._apply_theme()
                 self.theme_changed.emit(new_theme)
-                print(f"[INFO] Theme changed to {new_theme} and applied to application")
+                log("info", f"Theme changed to {new_theme}", "SettingsDialog")
             except Exception as e:
-                print(f"[ERROR] Failed to change theme: {e}")
+                log("error", f"Failed to change theme: {e}", "SettingsDialog")
     
     def _on_preset_changed(self, checked):
         """Handle font preset change"""
@@ -358,9 +359,9 @@ class SettingsDialog(QDialog):
                     # SAVE TO PERSISTENT STORAGE
                     self._save_preset_to_config(preset_value)
                     
-                    print(f"[INFO] Font preset changed to {preset_value} ({point_size}pt) and applied to application")
+                    log("info", f"Font preset changed to {preset_value}", "SettingsDialog")
                 except Exception as e:
-                    print(f"[ERROR] Failed to change font preset: {e}")
+                    log("error", f"Failed to change font preset: {e}", "SettingsDialog")
     
     def _apply_font_scale_to_app(self, point_size):
         """Apply font size to entire application (point_size: 15-30pt)."""
@@ -376,9 +377,9 @@ class SettingsDialog(QDialog):
             
             # Apply to application
             app.setFont(base_font)
-            print(f"[INFO] Applied font size {point_size}pt to application")
+            log("info", f"Applied font size {point_size}pt", "SettingsDialog")
         except Exception as e:
-            print(f"[WARNING] Could not apply font size: {e}")
+            log("warn", f"Could not apply font size: {e}", "SettingsDialog")
     
     def _restore_dialog_fonts(self):
         """Restore fixed font sizes for this dialog (prevent it from being affected by app font changes)."""
@@ -409,71 +410,27 @@ class SettingsDialog(QDialog):
                 group_font.setBold(True)
                 groupbox.setFont(group_font)
             
-            print("[DEBUG] Dialog fonts restored to fixed sizes")
         except Exception as e:
-            print(f"[WARNING] Could not restore dialog fonts: {e}")
+            log("warn", f"Could not restore dialog fonts: {e}", "SettingsDialog")
     
     def _save_preset_to_config(self, preset: str):
-        """Save font preset to config file"""
+        """Save font preset to config via ConfigManager."""
         try:
-            import json
-            from pathlib import Path
-            
-            # Get config file path
-            config_path = Path(__file__).parent.parent / "config.json"
-            
-            # Read current config
-            if config_path.exists():
-                with open(config_path, 'r') as f:
-                    config = json.load(f)
-            else:
-                config = {}
-            
-            # Add/update font_preset
-            if 'ui_settings' not in config:
-                config['ui_settings'] = {}
-            config['ui_settings']['font_preset'] = preset
-            
-            # Save config
-            with open(config_path, 'w') as f:
-                json.dump(config, f, indent=4)
-                
-            print(f"[INFO] Saved font preset: {preset}")
+            from config.manager import get_config_manager
+            get_config_manager().set("ui_settings.font_preset", preset)
         except Exception as e:
-            print(f"[WARNING] Could not save font preset: {e}")
+            from utils.error_logger import log
+            log("warn", f"Could not save font preset: {e}", "SettingsDialog")
     
     def _load_current_preset(self):
         """Load and set the current font preset from settings."""
         try:
-            # Try to load from config.json first
-            import json
-            from pathlib import Path
-            
-            config_path = Path(__file__).parent.parent / "config.json"
-            if config_path.exists():
-                with open(config_path, 'r') as f:
-                    config = json.load(f)
-                
-                saved_preset = config.get('ui_settings', {}).get('font_preset', 'normal')
-                current_preset = saved_preset
-                print(f"[INFO] Loaded font preset from config: {current_preset}")
-            else:
-                # Fallback to normal
-                current_preset = 'normal'
-                print(f"[INFO] No config found, using default preset: {current_preset}")
+            from config.manager import get_config_manager
+            current_preset = get_config_manager().get("ui_settings.font_preset", "normal")
         except Exception as e:
-            print(f"[WARNING] Could not load preset from config: {e}")
-            # Fallback: determine preset from current point size
-            # Small: 14pt, Normal: 18pt, Large: 22pt, XLarge: 26pt
-            scale = self.current_scale if self.current_scale else 18
-            if scale <= 16:
-                current_preset = "small"
-            elif scale <= 20:
-                current_preset = "normal"
-            elif scale <= 24:
-                current_preset = "large"
-            else:
-                current_preset = "xlarge"
+            from utils.error_logger import log
+            log("warn", f"Could not load font preset: {e}", "SettingsDialog")
+            current_preset = "normal"
         
         # Set the correct radio button
         for button in self.preset_button_group.buttons():

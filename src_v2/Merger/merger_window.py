@@ -16,7 +16,7 @@ from PyQt5.QtWidgets import (
 )
 
 from ui.typography_mixin import V2TypographyMixin
-from ui.services import V2SettingsBus
+from ui.services import get_v2_settings_bus
 from ui.components_v2.buttons import PrimaryButton, SecondaryButton
 from ui.components_v2.dialogs import ProgressDialog
 from ui.keyboard_shortcuts import ShortcutManager, ShortcutDefinition, ShortcutCategory
@@ -92,7 +92,7 @@ class MergerWindow(QMainWindow, V2TypographyMixin):
         super().__init__(parent)
         V2TypographyMixin.__init__(self)
 
-        self.settings_bus = V2SettingsBus()
+        self.settings_bus = get_v2_settings_bus()
         self.service = MergerService()
         self.recent_manager = get_recent_merger_files_manager()
         self.worker: Optional[MergerWorker] = None
