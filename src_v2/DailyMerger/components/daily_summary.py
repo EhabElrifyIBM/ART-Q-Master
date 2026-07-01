@@ -27,14 +27,14 @@ from PyQt5.QtWidgets import (
 )
 
 from ui.design_system import Colors, Spacing, BorderRadius
-from ui.typography import TypographySystem
+from ui.typography_mixin import V2TypographyMixin
 from ui.components_v2.buttons import PrimaryButton, SecondaryButton
 
 from DailyMerger.daily_merger_service import ValidationResult
 from utils.recent_daily_merger_files import get_recent_daily_merger_manager
 
 
-class DailySummaryWidget(QWidget):
+class DailySummaryWidget(QWidget, V2TypographyMixin):
     """
     Validation summary + output path picker + merge trigger.
 
@@ -46,8 +46,8 @@ class DailySummaryWidget(QWidget):
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
+        V2TypographyMixin.__init__(self)
         self._theme_mode = "light"
-        self._typography = TypographySystem()
         self._validation: Optional[ValidationResult] = None
         self._recent_manager = get_recent_daily_merger_manager()
 
@@ -65,13 +65,13 @@ class DailySummaryWidget(QWidget):
         root.setSpacing(Spacing.MD)
 
         # ── Section title ─────────────────────────────────────────────
-        title = QLabel("📋  Validation Summary", self)
-        title.setFont(self._typography.create_font("h3"))
-        root.addWidget(title)
+        self._title_lbl = QLabel("📋  Validation Summary", self)
+        self._title_lbl.setFont(self.get_font("h3"))
+        root.addWidget(self._title_lbl)
 
         # ── Month confirmation label ───────────────────────────────────
         self._month_label = QLabel("", self)
-        self._month_label.setFont(self._typography.create_font("body"))
+        self._month_label.setFont(self.get_font("body"))
         self._month_label.setWordWrap(True)
         root.addWidget(self._month_label)
 
@@ -81,7 +81,7 @@ class DailySummaryWidget(QWidget):
         skip_layout = QVBoxLayout(self._skip_frame)
         skip_layout.setContentsMargins(Spacing.MD, Spacing.SM, Spacing.MD, Spacing.SM)
         self._skip_label = QLabel("", self._skip_frame)
-        self._skip_label.setFont(self._typography.create_font("body_sm"))
+        self._skip_label.setFont(self.get_font("body_sm"))
         self._skip_label.setWordWrap(True)
         skip_layout.addWidget(self._skip_label)
         self._skip_frame.setVisible(False)
@@ -93,7 +93,7 @@ class DailySummaryWidget(QWidget):
         warn_layout = QVBoxLayout(self._warning_frame)
         warn_layout.setContentsMargins(Spacing.MD, Spacing.SM, Spacing.MD, Spacing.SM)
         self._warning_label = QLabel("", self._warning_frame)
-        self._warning_label.setFont(self._typography.create_font("body_sm"))
+        self._warning_label.setFont(self.get_font("body_sm"))
         self._warning_label.setWordWrap(True)
         warn_layout.addWidget(self._warning_label)
         self._warning_frame.setVisible(False)
@@ -122,28 +122,28 @@ class DailySummaryWidget(QWidget):
         self._table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._table.setAlternatingRowColors(True)
         self._table.setMinimumHeight(220)
-        self._table.setFont(self._typography.create_font("body_sm"))
+        self._table.setFont(self.get_font("body_sm"))
         self._table.verticalHeader().setVisible(False)
         self._table.setSelectionBehavior(QAbstractItemView.SelectRows)
         root.addWidget(self._table)
 
         # ── Handler names found ───────────────────────────────────────
         self._handlers_label = QLabel("", self)
-        self._handlers_label.setFont(self._typography.create_font("body_sm"))
+        self._handlers_label.setFont(self.get_font("body_sm"))
         self._handlers_label.setWordWrap(True)
         root.addWidget(self._handlers_label)
 
         # ── Output path picker ────────────────────────────────────────
-        out_label = QLabel("Output File:", self)
-        out_label.setFont(self._typography.create_font("label"))
-        root.addWidget(out_label)
+        self._output_label = QLabel("Output File:", self)
+        self._output_label.setFont(self.get_font("label"))
+        root.addWidget(self._output_label)
 
         path_row = QHBoxLayout()
         path_row.setSpacing(Spacing.SM)
         self._output_edit = QLineEdit(self)
         self._output_edit.setMinimumHeight(44)
         self._output_edit.setPlaceholderText("Choose output file path…")
-        self._output_edit.setFont(self._typography.create_font("body_sm"))
+        self._output_edit.setFont(self.get_font("body_sm"))
         path_row.addWidget(self._output_edit)
 
         self._browse_out_btn = SecondaryButton("Browse…", self)
@@ -292,6 +292,16 @@ class DailySummaryWidget(QWidget):
     def set_theme_mode(self, mode: str) -> None:
         self._theme_mode = mode
         self._apply_styles()
+
+    def apply_typography(self) -> None:
+        self._title_lbl.setFont(self.get_font("h3"))
+        self._month_label.setFont(self.get_font("body"))
+        self._skip_label.setFont(self.get_font("body_sm"))
+        self._warning_label.setFont(self.get_font("body_sm"))
+        self._table.setFont(self.get_font("body_sm"))
+        self._handlers_label.setFont(self.get_font("body_sm"))
+        self._output_label.setFont(self.get_font("label"))
+        self._output_edit.setFont(self.get_font("body_sm"))
 
     def clear_output_path(self) -> None:
         """Clear the output path field (called when files are cleared)."""

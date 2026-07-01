@@ -251,14 +251,13 @@ class MonthlyMergerWindow(QMainWindow, V2TypographyMixin):
 
         # Header
         hdr = QHBoxLayout()
-        t = TypographySystem()
-        title = QLabel("📆  Monthly Case Merger", self)
-        title.setFont(t.create_font("h2"))
-        hdr.addWidget(title)
+        self._title_lbl = QLabel("📆  Monthly Case Merger", self)
+        self._title_lbl.setFont(self.get_font("h2"))
+        hdr.addWidget(self._title_lbl)
         hdr.addStretch()
-        sub = QLabel("Merge monthly output files — latest month overwrites earlier", self)
-        sub.setFont(t.create_font("body_sm"))
-        hdr.addWidget(sub)
+        self._subtitle_lbl = QLabel("Merge monthly output files — latest month overwrites earlier", self)
+        self._subtitle_lbl.setFont(self.get_font("body_sm"))
+        hdr.addWidget(self._subtitle_lbl)
         root.addLayout(hdr)
 
         # Splitter
@@ -286,12 +285,12 @@ class MonthlyMergerWindow(QMainWindow, V2TypographyMixin):
         right_vbox.setContentsMargins(Spacing.MD, 0, 0, 0)
         right_vbox.setSpacing(Spacing.MD)
 
-        sec_title = QLabel("📋  Loaded Monthly Files", right_widget)
-        sec_title.setFont(t.create_font("h3"))
-        right_vbox.addWidget(sec_title)
+        self._files_section_lbl = QLabel("📋  Loaded Monthly Files", right_widget)
+        self._files_section_lbl.setFont(self.get_font("h3"))
+        right_vbox.addWidget(self._files_section_lbl)
 
         self._month_lbl = QLabel("", right_widget)
-        self._month_lbl.setFont(t.create_font("body"))
+        self._month_lbl.setFont(self.get_font("body"))
         self._month_lbl.setWordWrap(True)
         right_vbox.addWidget(self._month_lbl)
 
@@ -309,22 +308,22 @@ class MonthlyMergerWindow(QMainWindow, V2TypographyMixin):
         self._table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._table.setAlternatingRowColors(True)
         self._table.setMinimumHeight(240)
-        self._table.setFont(t.create_font("body_sm"))
+        self._table.setFont(self.get_font("body_sm"))
         self._table.verticalHeader().setVisible(False)
         self._table.setSelectionBehavior(QAbstractItemView.SelectRows)
         right_vbox.addWidget(self._table)
 
         # Output path row
-        out_label = QLabel("Output File:", right_widget)
-        out_label.setFont(t.create_font("label"))
-        right_vbox.addWidget(out_label)
+        self._output_label = QLabel("Output File:", right_widget)
+        self._output_label.setFont(self.get_font("label"))
+        right_vbox.addWidget(self._output_label)
 
         out_row = QHBoxLayout()
         out_row.setSpacing(Spacing.SM)
         self._output_edit = QLineEdit(right_widget)
         self._output_edit.setMinimumHeight(44)
         self._output_edit.setPlaceholderText("Choose output file path…")
-        self._output_edit.setFont(t.create_font("body_sm"))
+        self._output_edit.setFont(self.get_font("body_sm"))
         out_row.addWidget(self._output_edit)
         browse_out = SecondaryButton("Browse…", right_widget)
         browse_out.setMinimumHeight(44)
@@ -360,18 +359,18 @@ class MonthlyMergerWindow(QMainWindow, V2TypographyMixin):
         log_hl = QHBoxLayout(log_header)
         log_hl.setContentsMargins(Spacing.SM, Spacing.XS, Spacing.SM, Spacing.XS)
         log_hl.setSpacing(Spacing.SM)
-        log_title_lbl = QLabel("📋  Activity Log", log_header)
-        log_title_lbl.setFont(t.create_font("label"))
-        log_hl.addWidget(log_title_lbl)
+        self._log_title_lbl = QLabel("📋  Activity Log", log_header)
+        self._log_title_lbl.setFont(self.get_font("label"))
+        log_hl.addWidget(self._log_title_lbl)
         log_hl.addStretch()
-        clr_btn = QPushButton("Clear", log_header)
-        clr_btn.setFixedSize(54, 26)
-        clr_btn.setFont(t.create_font("caption"))
-        clr_btn.clicked.connect(lambda: self._log_view.clear())
-        log_hl.addWidget(clr_btn)
+        self._clear_log_btn = QPushButton("Clear", log_header)
+        self._clear_log_btn.setFixedSize(54, 26)
+        self._clear_log_btn.setFont(self.get_font("caption"))
+        self._clear_log_btn.clicked.connect(lambda: self._log_view.clear())
+        log_hl.addWidget(self._clear_log_btn)
         self._log_toggle_btn = QPushButton("▲ Hide", log_header)
         self._log_toggle_btn.setFixedSize(64, 26)
-        self._log_toggle_btn.setFont(t.create_font("caption"))
+        self._log_toggle_btn.setFont(self.get_font("caption"))
         self._log_toggle_btn.clicked.connect(self._toggle_log)
         log_hl.addWidget(self._log_toggle_btn)
         log_outer.addWidget(log_header)
@@ -413,7 +412,7 @@ class MonthlyMergerWindow(QMainWindow, V2TypographyMixin):
         self._dz_title = QLabel("Drop Monthly Merged Files Here", frame)
         self._dz_title.setAlignment(Qt.AlignCenter)
         self._dz_title.setWordWrap(True)
-        self._dz_title.setFont(TypographySystem().create_font("h3"))
+        self._dz_title.setFont(self.get_font("h3"))
         layout.addWidget(self._dz_title)
 
         self._dz_sub = QLabel(
@@ -421,7 +420,7 @@ class MonthlyMergerWindow(QMainWindow, V2TypographyMixin):
             frame,
         )
         self._dz_sub.setAlignment(Qt.AlignCenter)
-        self._dz_sub.setFont(TypographySystem().create_font("body_sm"))
+        self._dz_sub.setFont(self.get_font("body_sm"))
         self._dz_sub.setWordWrap(True)
         layout.addWidget(self._dz_sub)
 
@@ -445,7 +444,7 @@ class MonthlyMergerWindow(QMainWindow, V2TypographyMixin):
 
         self._summary_lbl = QLabel("No files loaded", frame)
         self._summary_lbl.setAlignment(Qt.AlignCenter)
-        self._summary_lbl.setFont(TypographySystem().create_font("body_sm"))
+        self._summary_lbl.setFont(self.get_font("body_sm"))
         layout.addWidget(self._summary_lbl)
 
         return frame
@@ -934,7 +933,19 @@ class MonthlyMergerWindow(QMainWindow, V2TypographyMixin):
         event.accept()
 
     def apply_typography(self) -> None:
-        pass
+        self._title_lbl.setFont(self.get_font("h2"))
+        self._subtitle_lbl.setFont(self.get_font("body_sm"))
+        self._files_section_lbl.setFont(self.get_font("h3"))
+        self._month_lbl.setFont(self.get_font("body"))
+        self._table.setFont(self.get_font("body_sm"))
+        self._output_label.setFont(self.get_font("label"))
+        self._output_edit.setFont(self.get_font("body_sm"))
+        self._log_title_lbl.setFont(self.get_font("label"))
+        self._clear_log_btn.setFont(self.get_font("caption"))
+        self._log_toggle_btn.setFont(self.get_font("caption"))
+        self._dz_title.setFont(self.get_font("h3"))
+        self._dz_sub.setFont(self.get_font("body_sm"))
+        self._summary_lbl.setFont(self.get_font("body_sm"))
 
 
 # ---------------------------------------------------------------------------

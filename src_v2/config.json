@@ -1,26 +1,18 @@
 {
     "agent_settings": {
-        "agent_name": "",
-        "user_id": "",
-        "password": "",
-        "place_id": ""
+        "agent_name": "Ehab Elrify",
+        "user_id": "Agent_Cairo_US_925",
+        "password": "123456",
+        "place_id": "Place_57080_SIPSwitch_US"
     },
     "file_paths": {
-        "excel_base_path": "",
-        "cache_directory": ""
+        "excel_base_path": "C:/Users/EhabElrify/Desktop/PA Daily Sheets",
+        "cache_directory": "C:/Users/EhabElrify/Desktop/ART NTO"
     },
     "crm_settings": {
-        "excel_sheet_name": ""
+        "excel_sheet_name": "Ehab's Cases"
     },
     "execution_settings": {
-        "start_time": "14:55",
-        "end_time": "23:59",
         "refresh_interval": 10
-    },
-    "ui_settings": {
-        "theme_mode": "light",
-        "font_preset": "normal",
-        "high_contrast": false,
-        "animations_enabled": true
     }
 }

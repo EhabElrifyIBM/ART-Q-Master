@@ -100,11 +100,14 @@ class V2TypographyMixin:
         # Get settings bus for reactive updates
         self.settings_bus = get_v2_settings_bus()
         
-        # Load current font preset from settings
+        # Load current font preset from settings. Read via config.manager —
+        # the same source the Settings dialog persists to
+        # (ui/settings_dialog.py:_save_preset_to_config) — not
+        # ui.settings.SettingsManager, which is a separate, unrelated file
+        # that the Settings dialog never writes to.
         try:
-            from ui.settings import SettingsManager
-            settings = SettingsManager()
-            current_preset = settings.appearance.font_size_preset
+            from config.manager import get_config_manager
+            current_preset = get_config_manager().get("ui_settings.font_preset", "normal")
             preset = FontSizePreset.from_string(current_preset)
             self.typography.set_preset(preset)
         except Exception:

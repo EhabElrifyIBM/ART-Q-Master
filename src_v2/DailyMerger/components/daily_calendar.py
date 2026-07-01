@@ -30,7 +30,7 @@ from PyQt5.QtWidgets import (
 )
 
 from ui.design_system import Colors, Spacing, BorderRadius
-from ui.typography import TypographySystem
+from ui.typography_mixin import V2TypographyMixin
 
 # Day-of-week header labels (Mon first)
 _DOW_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
@@ -42,7 +42,7 @@ _MONTH_NAMES = {
 }
 
 
-class _MonthGrid(QFrame):
+class _MonthGrid(QFrame, V2TypographyMixin):
     """
     A single month calendar grid.
 
@@ -59,13 +59,14 @@ class _MonthGrid(QFrame):
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
+        V2TypographyMixin.__init__(self)
         self.setObjectName("monthGrid")
         self._year       = year
         self._month      = month
         self._marked     = marked_days
         self._theme_mode = theme_mode
-        self._typography = TypographySystem()
         self._day_cells: List[QLabel] = []
+        self._dow_labels: List[QLabel] = []
 
         self._build()
         self._apply_styles()
@@ -83,7 +84,7 @@ class _MonthGrid(QFrame):
         title = QLabel(
             f"{_MONTH_NAMES[self._month]} {self._year}", self
         )
-        title.setFont(self._typography.create_font("label"))
+        title.setFont(self.get_font("label"))
         title.setAlignment(Qt.AlignCenter)
         outer.addWidget(title)
         self._title_label = title
@@ -96,9 +97,10 @@ class _MonthGrid(QFrame):
         for col, dow in enumerate(_DOW_LABELS):
             lbl = QLabel(dow, self)
             lbl.setAlignment(Qt.AlignCenter)
-            lbl.setFont(self._typography.create_font("caption"))
+            lbl.setFont(self.get_font("caption"))
             lbl.setFixedSize(34, 22)
             grid.addWidget(lbl, 0, col)
+            self._dow_labels.append(lbl)
             self._style_dow_header(lbl)
 
         # Day cells
@@ -198,19 +200,16 @@ class _MonthGrid(QFrame):
     def set_theme_mode(self, mode: str) -> None:
         self._theme_mode = mode
         self._apply_styles()
-        # Re-style DOW headers
-        dow_row_labels = []
-        for i in range(self.layout().count()):
-            item = self.layout().itemAt(i)
-            if item and item.layout():
-                grid = item.layout()
-                for j in range(7):
-                    w = grid.itemAtPosition(0, j)
-                    if w and w.widget():
-                        self._style_dow_header(w.widget())
+        for lbl in self._dow_labels:
+            self._style_dow_header(lbl)
+
+    def apply_typography(self) -> None:
+        self._title_label.setFont(self.get_font("label"))
+        for lbl in self._dow_labels:
+            lbl.setFont(self.get_font("caption"))
 
 
-class DailyCalendarWidget(QWidget):
+class DailyCalendarWidget(QWidget, V2TypographyMixin):
     """
     Container that holds one _MonthGrid per detected month, arranged
     horizontally in a scroll area.
@@ -224,8 +223,8 @@ class DailyCalendarWidget(QWidget):
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
+        V2TypographyMixin.__init__(self)
         self._theme_mode = "light"
-        self._typography = TypographySystem()
         self._grids: List[_MonthGrid] = []
         self._current_year = _current_year()
 
@@ -245,11 +244,11 @@ class DailyCalendarWidget(QWidget):
         hdr.setSpacing(Spacing.SM)
 
         self._title_lbl = QLabel("📆  File Coverage Calendar", self)
-        self._title_lbl.setFont(self._typography.create_font("label"))
+        self._title_lbl.setFont(self.get_font("label"))
         hdr.addWidget(self._title_lbl)
 
         self._legend_loaded = QLabel("", self)
-        self._legend_loaded.setFont(self._typography.create_font("caption"))
+        self._legend_loaded.setFont(self.get_font("caption"))
         hdr.addWidget(self._legend_loaded)
         hdr.addStretch()
 
@@ -257,7 +256,7 @@ class DailyCalendarWidget(QWidget):
         self._legend_lbl = QLabel(
             "  ●  = file loaded    □  = no file", self
         )
-        self._legend_lbl.setFont(self._typography.create_font("caption"))
+        self._legend_lbl.setFont(self.get_font("caption"))
         hdr.addWidget(self._legend_lbl)
 
         root.addLayout(hdr)
@@ -285,7 +284,7 @@ class DailyCalendarWidget(QWidget):
             "Load daily files to see coverage calendar…", self._inner
         )
         self._placeholder.setAlignment(Qt.AlignCenter)
-        self._placeholder.setFont(self._typography.create_font("body_sm"))
+        self._placeholder.setFont(self.get_font("body_sm"))
         self._inner_layout.addWidget(self._placeholder)
 
         self._scroll.setWidget(self._inner)
@@ -318,6 +317,12 @@ class DailyCalendarWidget(QWidget):
         for g in self._grids:
             g.set_theme_mode(mode)
         self._apply_styles()
+
+    def apply_typography(self) -> None:
+        self._title_lbl.setFont(self.get_font("label"))
+        self._legend_loaded.setFont(self.get_font("caption"))
+        self._legend_lbl.setFont(self.get_font("caption"))
+        self._placeholder.setFont(self.get_font("body_sm"))
 
     # ------------------------------------------------------------------
     # Internal

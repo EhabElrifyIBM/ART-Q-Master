@@ -963,6 +963,10 @@ def show_companies_completion_dialog():
             app = QApplication(sys.argv)
 
         from PyQt5.QtWidgets import QMessageBox
+
+        theme_mode = get_v2_settings_bus().theme
+        colors = Colors.DARK if theme_mode == "dark" else Colors.LIGHT
+
         msg = QMessageBox()
         msg.setWindowTitle("Companies Process Complete")
         msg.setText("✓  All company cases have been processed.")
@@ -970,6 +974,18 @@ def show_companies_completion_dialog():
         msg.setIcon(QMessageBox.Information)
         msg.setStandardButtons(QMessageBox.Close)
         msg.setDefaultButton(QMessageBox.Close)
+        msg.setStyleSheet(f"""
+            QMessageBox {{ background-color: {colors['background']}; }}
+            QMessageBox QLabel {{ color: {colors['text_primary']}; }}
+            QPushButton {{
+                background-color: {colors['surface']};
+                color: {colors['text_primary']};
+                border: 1px solid {colors['border']};
+                border-radius: 4px;
+                padding: 6px 16px;
+            }}
+            QPushButton:hover {{ background-color: {colors['surface_hover']}; }}
+        """)
         msg.exec_()
     except Exception as e:
         print(f"[WARN] Could not show completion dialog: {e}")

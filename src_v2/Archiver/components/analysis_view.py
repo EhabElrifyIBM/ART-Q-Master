@@ -28,12 +28,12 @@ from PyQt5.QtWidgets import (
 )
 
 from ui.design_system import Colors, Spacing, BorderRadius
-from ui.typography import TypographySystem, FontSizePreset
+from ui.typography_mixin import V2TypographyMixin
 from ui.components_v2.buttons import PrimaryButton, SecondaryButton
 from Archiver.archiver_service import AnalysisResult
 
 
-class _StatCard(QFrame):
+class _StatCard(QFrame, V2TypographyMixin):
     """Small stat card showing a value and a label."""
 
     def __init__(
@@ -45,12 +45,11 @@ class _StatCard(QFrame):
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
+        V2TypographyMixin.__init__(self)
         self.setObjectName("statCard")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(Spacing.MD, Spacing.SM, Spacing.MD, Spacing.SM)
         layout.setSpacing(2)
-
-        typo = TypographySystem()
 
         top_row = QHBoxLayout()
         if icon:
@@ -58,19 +57,23 @@ class _StatCard(QFrame):
             ic.setFont(QFont("Segoe UI Emoji", 16))
             top_row.addWidget(ic)
         self._value_label = QLabel(value)
-        self._value_label.setFont(typo.create_font("h3", QFont.Bold))
+        self._value_label.setFont(self.get_font("h3", QFont.Bold))
         top_row.addWidget(self._value_label)
         top_row.addStretch()
         layout.addLayout(top_row)
 
         self._desc_label = QLabel(label)
-        self._desc_label.setFont(typo.create_font("caption"))
+        self._desc_label.setFont(self.get_font("caption"))
         layout.addWidget(self._desc_label)
 
         self._apply_style(theme_mode)
 
     def update_value(self, value: str) -> None:
         self._value_label.setText(value)
+
+    def apply_typography(self) -> None:
+        self._value_label.setFont(self.get_font("h3", QFont.Bold))
+        self._desc_label.setFont(self.get_font("caption"))
 
     def _apply_style(self, theme_mode: str) -> None:
         colors = Colors.LIGHT if theme_mode == "light" else Colors.DARK
@@ -87,7 +90,7 @@ class _StatCard(QFrame):
         )
 
 
-class AnalysisViewWidget(QWidget):
+class AnalysisViewWidget(QWidget, V2TypographyMixin):
     """
     Display workbook analysis results with stats and per-handler table.
 
@@ -102,9 +105,9 @@ class AnalysisViewWidget(QWidget):
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
+        V2TypographyMixin.__init__(self)
 
         self._theme_mode = "light"
-        self._typography = TypographySystem()
         self._analysis_results: Optional[Dict[str, AnalysisResult]] = None
 
         self._setup_ui()
@@ -121,9 +124,9 @@ class AnalysisViewWidget(QWidget):
 
         # ── Title ────────────────────────────────────────────────────
         title_row = QHBoxLayout()
-        title_label = QLabel("📊  Analysis Results", self)
-        title_label.setFont(self._typography.create_font("h2", QFont.Bold))
-        title_row.addWidget(title_label)
+        self._title_label = QLabel("📊  Analysis Results", self)
+        self._title_label.setFont(self.get_font("h2", QFont.Bold))
+        title_row.addWidget(self._title_label)
         title_row.addStretch()
         layout.addLayout(title_row)
 
@@ -143,7 +146,7 @@ class AnalysisViewWidget(QWidget):
 
         # ── Summary message ──────────────────────────────────────────
         self._summary_label = QLabel("Select and analyse a workbook to see results.", self)
-        self._summary_label.setFont(self._typography.create_font("body"))
+        self._summary_label.setFont(self.get_font("body"))
         self._summary_label.setWordWrap(True)
         layout.addWidget(self._summary_label)
 
@@ -303,7 +306,7 @@ class AnalysisViewWidget(QWidget):
 
         def _item(text: str, center: bool = False) -> QTableWidgetItem:
             it = QTableWidgetItem(text)
-            it.setFont(self._typography.create_font("body"))
+            it.setFont(self.get_font("body"))
             if center:
                 it.setTextAlignment(Qt.AlignCenter)
             return it
@@ -368,6 +371,16 @@ class AnalysisViewWidget(QWidget):
         """Update the theme ('light' or 'dark')."""
         self._theme_mode = mode
         self._apply_styles()
+
+    def apply_typography(self) -> None:
+        self._title_label.setFont(self.get_font("h2", QFont.Bold))
+        self._summary_label.setFont(self.get_font("body"))
+        body_font = self.get_font("body")
+        for row in range(self._results_table.rowCount()):
+            for col in range(self._results_table.columnCount()):
+                item = self._results_table.item(row, col)
+                if item is not None:
+                    item.setFont(body_font)
 
 
 __all__ = ["AnalysisViewWidget"]

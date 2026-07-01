@@ -1709,14 +1709,31 @@ def show_completion_dialog(processed, total):
         app = QApplication.instance()
         if app is None:
             app = QApplication(sys.argv)
-        
-        QMessageBox.information(
-            None,
-            "Auto Sender Complete",
+
+        theme_mode = get_v2_settings_bus().theme
+        colors = Colors.DARK if theme_mode == "dark" else Colors.LIGHT
+
+        msg = QMessageBox()
+        msg.setWindowTitle("Auto Sender Complete")
+        msg.setText(
             f"Auto Sender has finished processing.\n\n"
             f"Processed: {processed}/{total} cases\n\n"
             f"Click OK to exit."
         )
+        msg.setIcon(QMessageBox.Information)
+        msg.setStyleSheet(f"""
+            QMessageBox {{ background-color: {colors['background']}; }}
+            QMessageBox QLabel {{ color: {colors['text_primary']}; }}
+            QPushButton {{
+                background-color: {colors['surface']};
+                color: {colors['text_primary']};
+                border: 1px solid {colors['border']};
+                border-radius: 4px;
+                padding: 6px 16px;
+            }}
+            QPushButton:hover {{ background-color: {colors['surface_hover']}; }}
+        """)
+        msg.exec_()
     except Exception as e:
         print(f"[WARN] Could not show completion dialog: {e}")
 

@@ -3,13 +3,12 @@ Daily Case Merger — standalone entry point.
 
 Run via:
     python -m DailyMerger.run_daily_merger
-or launched by tool_launcher.py as a subprocess.
 """
 
 import sys
 import os
 
-# Ensure src_v2 is on path when launched as a subprocess
+# Ensure src_v2 is on path when run standalone
 _here = os.path.dirname(os.path.abspath(__file__))
 _src_v2 = os.path.dirname(_here)
 if _src_v2 not in sys.path:

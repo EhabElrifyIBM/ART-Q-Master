@@ -27,12 +27,12 @@ from PyQt5.QtWidgets import (
 )
 
 from ui.design_system import Colors, Spacing, BorderRadius
-from ui.typography import TypographySystem, FontSizePreset
+from ui.typography_mixin import V2TypographyMixin
 from ui.components_v2.buttons import PrimaryButton, SecondaryButton
 from utils.recent_archiver_files import get_recent_archiver_files_manager
 
 
-class FileSelectorWidget(QWidget):
+class FileSelectorWidget(QWidget, V2TypographyMixin):
     """
     File selector with drag-drop, file metadata display, and recent files.
 
@@ -46,9 +46,9 @@ class FileSelectorWidget(QWidget):
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
+        V2TypographyMixin.__init__(self)
 
         self._theme_mode = "light"
-        self._typography = TypographySystem()
         self._recent_manager = get_recent_archiver_files_manager()
         self._selected_file: Optional[Path] = None
 
@@ -83,15 +83,15 @@ class FileSelectorWidget(QWidget):
         icon_label.setFont(QFont("Segoe UI Emoji", 40))
         drop_layout.addWidget(icon_label)
 
-        drop_text = QLabel("Drag & Drop Excel File Here", self._drop_zone)
-        drop_text.setAlignment(Qt.AlignCenter)
-        drop_text.setFont(self._typography.create_font("h3"))
-        drop_layout.addWidget(drop_text)
+        self._drop_text_lbl = QLabel("Drag & Drop Excel File Here", self._drop_zone)
+        self._drop_text_lbl.setAlignment(Qt.AlignCenter)
+        self._drop_text_lbl.setFont(self.get_font("h3"))
+        drop_layout.addWidget(self._drop_text_lbl)
 
-        or_label = QLabel("or", self._drop_zone)
-        or_label.setAlignment(Qt.AlignCenter)
-        or_label.setFont(self._typography.create_font("body_sm"))
-        drop_layout.addWidget(or_label)
+        self._or_lbl = QLabel("or", self._drop_zone)
+        self._or_lbl.setAlignment(Qt.AlignCenter)
+        self._or_lbl.setFont(self.get_font("body_sm"))
+        drop_layout.addWidget(self._or_lbl)
 
         btn_row = QHBoxLayout()
         btn_row.setAlignment(Qt.AlignCenter)
@@ -112,25 +112,25 @@ class FileSelectorWidget(QWidget):
         file_info_layout.setSpacing(2)
 
         self._file_label = QLabel("No file selected", self._file_info_frame)
-        self._file_label.setFont(self._typography.create_font("body"))
+        self._file_label.setFont(self.get_font("body"))
         self._file_label.setWordWrap(True)
         file_info_layout.addWidget(self._file_label)
 
         self._file_meta_label = QLabel("", self._file_info_frame)
-        self._file_meta_label.setFont(self._typography.create_font("caption"))
+        self._file_meta_label.setFont(self.get_font("caption"))
         self._file_meta_label.setVisible(False)
         file_info_layout.addWidget(self._file_meta_label)
 
         layout.addWidget(self._file_info_frame)
 
         # ── Recent files ──────────────────────────────────────────────
-        recent_label = QLabel("Recent Files:", self)
-        recent_label.setFont(self._typography.create_font("label"))
-        layout.addWidget(recent_label)
+        self._recent_label = QLabel("Recent Files:", self)
+        self._recent_label.setFont(self.get_font("label"))
+        layout.addWidget(self._recent_label)
 
         self._recent_list = QListWidget(self)
         self._recent_list.setMaximumHeight(130)
-        self._recent_list.setFont(self._typography.create_font("body_sm"))
+        self._recent_list.setFont(self.get_font("body_sm"))
         self._recent_list.setAlternatingRowColors(True)
         self._recent_list.itemClicked.connect(self._on_recent_file_clicked)
         self._recent_list.itemActivated.connect(self._on_recent_file_clicked)  # keyboard Enter
@@ -243,6 +243,14 @@ class FileSelectorWidget(QWidget):
         """Update the theme ('light' or 'dark')."""
         self._theme_mode = mode
         self._apply_styles()
+
+    def apply_typography(self) -> None:
+        self._drop_text_lbl.setFont(self.get_font("h3"))
+        self._or_lbl.setFont(self.get_font("body_sm"))
+        self._file_label.setFont(self.get_font("body"))
+        self._file_meta_label.setFont(self.get_font("caption"))
+        self._recent_label.setFont(self.get_font("label"))
+        self._recent_list.setFont(self.get_font("body_sm"))
 
     # ------------------------------------------------------------------
     # Drag-drop handlers

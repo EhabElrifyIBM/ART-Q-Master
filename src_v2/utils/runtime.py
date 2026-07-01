@@ -20,6 +20,7 @@ class RuntimePaths:
     project_root: str
     src_v2_root: str
     art_q_control_dir: str
+    reach_rate_dir: str
     ui_dir: str
     utils_dir: str
     config_file: str
@@ -48,6 +49,7 @@ def get_runtime_paths() -> RuntimePaths:
         project_root=project_root,
         src_v2_root=src_v2_root,
         art_q_control_dir=os.path.join(src_v2_root, "ART Q Control"),
+        reach_rate_dir=os.path.join(src_v2_root, "Reach Rate Calculator"),
         ui_dir=os.path.join(src_v2_root, "ui"),
         utils_dir=_utils_dir(),
         config_file=os.path.join(src_v2_root, "config.json"),
@@ -57,7 +59,13 @@ def get_runtime_paths() -> RuntimePaths:
 def ensure_runtime_paths() -> RuntimePaths:
     """Ensure the required src_v2 paths are available on sys.path."""
     paths = get_runtime_paths()
-    for path in (paths.src_v2_root, paths.art_q_control_dir, paths.ui_dir, paths.utils_dir):
+    for path in (
+        paths.src_v2_root,
+        paths.art_q_control_dir,
+        paths.reach_rate_dir,
+        paths.ui_dir,
+        paths.utils_dir,
+    ):
         if path not in sys.path:
             sys.path.insert(0, path)
     return paths

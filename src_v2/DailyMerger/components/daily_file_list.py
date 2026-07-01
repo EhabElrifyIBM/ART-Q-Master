@@ -30,11 +30,11 @@ from PyQt5.QtWidgets import (
 )
 
 from ui.design_system import Colors, Spacing, BorderRadius
-from ui.typography import TypographySystem
+from ui.typography_mixin import V2TypographyMixin
 from ui.components_v2.buttons import PrimaryButton, SecondaryButton
 
 
-class DailyFileListWidget(QWidget):
+class DailyFileListWidget(QWidget, V2TypographyMixin):
     """
     Drop-zone + file-count summary for loading daily workbooks.
 
@@ -49,8 +49,8 @@ class DailyFileListWidget(QWidget):
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
+        V2TypographyMixin.__init__(self)
         self._theme_mode = "light"
-        self._typography = TypographySystem()
         self._files: List[Path] = []
         self._last_browse_dir: str = ""
 
@@ -67,16 +67,16 @@ class DailyFileListWidget(QWidget):
         root.setSpacing(Spacing.MD)
 
         # ── Section title ─────────────────────────────────────────────
-        title = QLabel("📅  Load Daily Workbooks", self)
-        title.setFont(self._typography.create_font("h3"))
-        root.addWidget(title)
+        self._title_lbl = QLabel("📅  Load Daily Workbooks", self)
+        self._title_lbl.setFont(self.get_font("h3"))
+        root.addWidget(self._title_lbl)
 
         # ── ZIP toggle ────────────────────────────────────────────────
         zip_row = QHBoxLayout()
         zip_row.setSpacing(Spacing.SM)
         self._zip_toggle = QCheckBox("📦  Accept ZIP files", self)
         self._zip_toggle.setChecked(True)
-        self._zip_toggle.setFont(self._typography.create_font("body_sm"))
+        self._zip_toggle.setFont(self.get_font("body_sm"))
         self._zip_toggle.setToolTip(
             "When enabled, .zip archives that contain a single\n"
             "'Active Cases PA MM-DD.xlsx' workbook are accepted\n"
@@ -112,7 +112,7 @@ class DailyFileListWidget(QWidget):
         )
         self._dz_title.setAlignment(Qt.AlignCenter)
         self._dz_title.setWordWrap(True)
-        self._dz_title.setFont(self._typography.create_font("h3"))
+        self._dz_title.setFont(self.get_font("h3"))
         dz_layout.addWidget(self._dz_title)
 
         self._dz_sub = QLabel(
@@ -121,7 +121,7 @@ class DailyFileListWidget(QWidget):
             self._drop_zone,
         )
         self._dz_sub.setAlignment(Qt.AlignCenter)
-        self._dz_sub.setFont(self._typography.create_font("body_sm"))
+        self._dz_sub.setFont(self.get_font("body_sm"))
         self._dz_sub.setWordWrap(True)
         dz_layout.addWidget(self._dz_sub)
 
@@ -147,7 +147,7 @@ class DailyFileListWidget(QWidget):
 
         # ── File count / summary chip ──────────────────────────────────
         self._summary_label = QLabel("No files loaded — drop files above to begin", self)
-        self._summary_label.setFont(self._typography.create_font("body_sm"))
+        self._summary_label.setFont(self.get_font("body_sm"))
         self._summary_label.setAlignment(Qt.AlignCenter)
         self._summary_label.setWordWrap(True)
         root.addWidget(self._summary_label)
@@ -202,6 +202,13 @@ class DailyFileListWidget(QWidget):
     def set_theme_mode(self, mode: str) -> None:
         self._theme_mode = mode
         self._apply_styles()
+
+    def apply_typography(self) -> None:
+        self._title_lbl.setFont(self.get_font("h3"))
+        self._zip_toggle.setFont(self.get_font("body_sm"))
+        self._dz_title.setFont(self.get_font("h3"))
+        self._dz_sub.setFont(self.get_font("body_sm"))
+        self._summary_label.setFont(self.get_font("body_sm"))
 
     # ------------------------------------------------------------------
     # Drag-drop
